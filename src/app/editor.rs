@@ -1,0 +1,97 @@
+//! Modal confirmation and text/choice editing.
+use super::{App, ConfirmedAction, Effect, Popup, clean};
+use crate::model::Mutation;
+use crossterm::event::{KeyCode, KeyEvent};
+
+impl App {
+    pub(super) fn handle_popup(&mut self, mut popup: Popup, key: KeyEvent) -> Effect {
+        if key.code == KeyCode::Esc {
+            return Effect::default();
+        }
+        match &mut popup {
+            Popup::Help | Popup::Inspect(_) if key.code == KeyCode::Enter => {
+                return Effect::default();
+            }
+            Popup::Confirm { action, .. } if key.code == KeyCode::Enter => {
+                if !self.busy {
+                    self.busy = true;
+                    return match action {
+                        ConfirmedAction::Firewall(mutation) => Effect {
+                            mutation: Some(mutation.clone()),
+                            ..Default::default()
+                        },
+                        ConfirmedAction::Terminate(request) => Effect {
+                            terminate: Some(request.clone()),
+                            ..Default::default()
+                        },
+                    };
+                }
+            }
+            Popup::Confirm { scroll, .. } => match key.code {
+                KeyCode::Up => scroll.set(scroll.get().saturating_sub(1)),
+                KeyCode::Down => scroll.set(scroll.get().saturating_add(1)),
+                KeyCode::PageUp => scroll.set(scroll.get().saturating_sub(8)),
+                KeyCode::PageDown => scroll.set(scroll.get().saturating_add(8)),
+                KeyCode::Home => scroll.set(0),
+                KeyCode::End => scroll.set(u16::MAX),
+                _ => {}
+            },
+            Popup::Application { path } => match key.code {
+                KeyCode::Enter if !path.trim().is_empty() => {
+                    let path = path.clone();
+                    self.confirm(
+                        "Add incoming application",
+                        format!("Add {} to the application firewall?", clean(&path)),
+                        Mutation::AddApplication(path),
+                    );
+                    return Effect::default();
+                }
+                KeyCode::Backspace => {
+                    path.pop();
+                }
+                KeyCode::Char(c) if !c.is_control() && path.len() < 4096 => path.push(c),
+                _ => {}
+            },
+            Popup::Network { draft, field } => match key.code {
+                KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % 7,
+                KeyCode::BackTab | KeyCode::Up => *field = (*field + 6) % 7,
+                KeyCode::Left | KeyCode::Right => draft.cycle(*field),
+                KeyCode::Char(' ') if draft.text_mut(*field).is_none() => draft.cycle(*field),
+                KeyCode::Backspace => {
+                    if let Some(text) = draft.text_mut(*field) {
+                        text.pop();
+                    }
+                }
+                KeyCode::Char(c) if !c.is_control() => {
+                    if let Some(text) = draft.text_mut(*field)
+                        && text.len() < 256
+                    {
+                        text.push(c);
+                    }
+                }
+                KeyCode::Enter => match draft.rule() {
+                    Ok(rule) => {
+                        let mut rules = self.snapshot.network.rules.clone();
+                        if let Some(index) = rules.iter().position(|r| r.id == rule.id) {
+                            rules[index] = rule;
+                        } else {
+                            rules.push(rule);
+                        }
+                        self.confirm(
+                            "Apply network rule",
+                            concat!("This rule applies to ALL applications on this Mac.\n\n",
+                                "Apply the ordered network rules? Existing connections may continue through PF state.").into(),
+                            Mutation::NetworkRules(rules),
+                        );
+                        return Effect::default();
+                    }
+                    Err(error) => self.notify(error.to_string(), true),
+                },
+                _ => {}
+            },
+            _ => {}
+        }
+        self.popup = Some(popup);
+        Effect::default()
+    }
+}

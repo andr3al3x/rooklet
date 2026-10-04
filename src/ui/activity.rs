@@ -1,0 +1,266 @@
+//! Full-width observed app metrics with expandable peer details.
+mod format;
+use super::{HitMap, theme::Palette};
+use crate::app::{ActivityRow, App, View, process_key};
+use crate::model::{Connection, ProcessActivity};
+use crate::presentation::clean;
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Rect},
+    style::{Modifier, Style},
+    text::Line,
+    widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
+};
+
+#[derive(Clone, Copy)]
+enum Column {
+    Application,
+    Peers,
+    Country,
+    Download,
+    Upload,
+    Received,
+    Sent,
+    Incoming,
+    Path,
+}
+impl Column {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Application => "APP / PEER",
+            Self::Peers => "Peers",
+            Self::Country => "Country",
+            Self::Download => "↓/s",
+            Self::Upload => "↑/s",
+            Self::Received => "↓ Total",
+            Self::Sent => "↑ Total",
+            Self::Incoming => "Incoming",
+            Self::Path => "Path",
+        }
+    }
+    fn numeric(self) -> bool {
+        matches!(
+            self,
+            Self::Peers | Self::Download | Self::Upload | Self::Received | Self::Sent
+        )
+    }
+}
+fn columns(width: u16) -> Vec<(Column, u16)> {
+    let mut columns = vec![(Column::Application, 0)];
+    if width >= 76 {
+        columns.push((Column::Peers, 5));
+    }
+    columns.extend([
+        (Column::Country, if width >= 76 { 9 } else { 7 }),
+        (Column::Download, 9),
+        (Column::Upload, 9),
+    ]);
+    if width >= 76 {
+        columns.extend([(Column::Received, 7), (Column::Sent, 7)]);
+    }
+    if width >= 110 {
+        columns.extend([
+            (Column::Incoming, 8),
+            (Column::Path, if width >= 130 { 28 } else { 20 }),
+        ]);
+    }
+    // Borders and the selection marker each consume two cells; spacing consumes one per gap.
+    let fixed = columns.iter().map(|(_, width)| *width).sum::<u16>() + columns.len() as u16 - 1 + 4;
+    columns[0].1 = width.saturating_sub(fixed);
+    columns
+}
+
+pub(super) fn draw(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    p: Palette,
+    hits: &mut HitMap,
+    state: &mut TableState,
+) {
+    let mut block = p.block("OBSERVED TRAFFIC");
+    let legend = if area.width >= 110 {
+        " Totals since monitoring started · Peers / protocol · Incoming = registered app entries "
+    } else if area.width >= 76 {
+        " Totals since monitoring started · Peers / protocol "
+    } else {
+        " Totals since monitoring started "
+    };
+    block = block.title_bottom(Line::from(legend).style(p.muted()));
+    let rows = app.activity_rows();
+    if rows.is_empty() {
+        let reason = if !app.filter().is_empty() {
+            "No apps or peers match this search."
+        } else {
+            app.snapshot
+                .notices
+                .iter()
+                .find(|notice| {
+                    notice.to_lowercase().contains("activity")
+                        || notice.to_lowercase().contains("nettop")
+                })
+                .map(String::as_str)
+                .unwrap_or("Waiting for process statistics. Observed connections will appear here.")
+        };
+        frame.render_widget(
+            Paragraph::new(clean(reason))
+                .block(block)
+                .wrap(Wrap { trim: true })
+                .style(p.muted()),
+            area,
+        );
+        return;
+    }
+    let columns = columns(area.width);
+    let permissions = if area.width >= 110 {
+        crate::permissions::Index::new(&app.snapshot)
+    } else {
+        crate::permissions::Index::default()
+    };
+    let data: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            Row::new(
+                columns
+                    .iter()
+                    .map(|&(column, width)| {
+                        let (text, style) = match row {
+                            ActivityRow::Process(process) => {
+                                process_cell(app, &permissions, process, column, width, p)
+                            }
+                            ActivityRow::Connection(_, flow) => {
+                                peer_cell(flow, column, width, area.width < 76, p)
+                            }
+                        };
+                        let alignment = if column.numeric() {
+                            Alignment::Right
+                        } else {
+                            Alignment::Left
+                        };
+                        Cell::from(Line::from(text).alignment(alignment)).style(style)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    let table = Table::new(
+        data,
+        columns.iter().map(|(_, width)| Constraint::Length(*width)),
+    )
+    .header(
+        Row::new(columns.iter().map(|(column, _)| column.title()))
+            .style(p.muted())
+            .bottom_margin(1),
+    )
+    .block(block)
+    .column_spacing(1)
+    .row_highlight_style(
+        Style::default()
+            .bg(p.selection)
+            .add_modifier(Modifier::BOLD),
+    )
+    .highlight_symbol("› ");
+    frame.render_stateful_widget(table, area, &mut *state);
+    let keys = rows.iter().map(ActivityRow::key).collect::<Vec<_>>();
+    hits.table(area, 2, state.offset(), View::Activity, &keys);
+}
+fn process_cell(
+    app: &App,
+    permissions: &crate::permissions::Index,
+    process: &ProcessActivity,
+    column: Column,
+    width: u16,
+    p: Palette,
+) -> (String, Style) {
+    let text = match column {
+        Column::Application => format!(
+            "{} {}",
+            if app.expanded.contains(&process_key(process)) {
+                "▾"
+            } else {
+                "▸"
+            },
+            clean(&process.name)
+        ),
+        Column::Peers => process.connections.len().to_string(),
+        Column::Country => format::country_summary(process, width),
+        Column::Download => format!("{}/s", format::bytes(process.rate_in)),
+        Column::Upload => format!("{}/s", format::bytes(process.rate_out)),
+        Column::Received => format::bytes(process.bytes_in),
+        Column::Sent => format::bytes(process.bytes_out),
+        Column::Incoming => permissions.activity(process).state.label().into(),
+        Column::Path => process
+            .path
+            .as_deref()
+            .map(|path| format::path(path, width))
+            .unwrap_or_else(|| "Unresolved".into()),
+    };
+    let style = match column {
+        Column::Download => Style::default().fg(p.accent),
+        Column::Upload => Style::default().fg(p.good),
+        Column::Country | Column::Peers | Column::Path => p.muted(),
+        Column::Incoming => Style::default().fg(match text.as_str() {
+            "Allow" => p.good,
+            "Block" => p.bad,
+            "Mixed" => p.warn,
+            _ => p.muted,
+        }),
+        _ => Style::default().fg(p.text),
+    };
+    (
+        format::fit(&text, width, matches!(column, Column::Path)),
+        style,
+    )
+}
+fn peer_cell(
+    flow: &Connection,
+    column: Column,
+    width: u16,
+    protocol_in_name: bool,
+    p: Palette,
+) -> (String, Style) {
+    let text = match column {
+        Column::Application => {
+            let host = clean(&flow.remote_ip);
+            let host = if host.contains(':') && flow.remote_port.is_some() {
+                format!("[{host}]")
+            } else {
+                host
+            };
+            let port = flow
+                .remote_port
+                .map(|port| format!(":{port}"))
+                .unwrap_or_default();
+            if protocol_in_name {
+                format!("  {} {host}{port}", flow.protocol)
+            } else {
+                format!("  {host}{port}")
+            }
+        }
+        Column::Peers => flow.protocol.to_string(),
+        Column::Country => {
+            if flow.local {
+                "Local".into()
+            } else {
+                flow.country
+                    .as_ref()
+                    .map(|country| clean(&country.code))
+                    .unwrap_or_else(|| "Unknown".into())
+            }
+        }
+        Column::Received => format::bytes(flow.bytes_in),
+        Column::Sent => format::bytes(flow.bytes_out),
+        _ => String::new(),
+    };
+    (format::fit(&text, width, false), p.muted())
+}
+pub(super) fn country(flow: &Connection) -> String {
+    if flow.local {
+        "Local network".into()
+    } else {
+        flow.country
+            .as_ref()
+            .map(|country| format!("{} · {}", clean(&country.code), clean(&country.name)))
+            .unwrap_or_else(|| "Unknown".into())
+    }
+}

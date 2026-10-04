@@ -1,0 +1,28 @@
+[package]
+name = "xield"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A standalone terminal firewall manager and traffic monitor for macOS"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+unicode-segmentation = "1.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+csv = "1.4"
+maxminddb = "0.27"
+ipnet = "2"
+libc = "0.2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+flate2 = "1"
+tempfile = "3"
+time = { version = "0.3", default-features = false, features = ["std"] }
+
+[profile.release]
+lto = "thin"
+strip = true
