@@ -7,6 +7,7 @@ pub mod model;
 pub mod network;
 pub mod permissions;
 mod presentation;
+pub use presentation::{clean, clean_multiline};
 pub mod process;
 pub mod profile;
 pub mod ui;

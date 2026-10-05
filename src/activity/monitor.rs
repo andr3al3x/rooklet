@@ -162,6 +162,7 @@ impl Monitor {
         let mut chunk = [0; 8192];
         let mut read = 0;
         let mut closed = false;
+        let mut samples = Vec::new();
         loop {
             ensure!(
                 !cancel.load(Ordering::Relaxed),
@@ -182,9 +183,7 @@ impl Monitor {
                     while let Some(end) = self.buffer.iter().position(|b| *b == b'\n') {
                         let line: Vec<_> = self.buffer.drain(..=end).collect();
                         if let Some(sample) = self.parser.push(&line)? {
-                            self.latest =
-                                self.tracker.update(sample, self.started.elapsed(), geoip);
-                            self.last_sample = Some(Instant::now());
+                            samples.push(sample);
                         }
                     }
                     ensure!(
@@ -200,6 +199,13 @@ impl Monitor {
                 }
                 Err(error) => return Err(error).context("nettop read failed"),
             }
+        }
+        if !samples.is_empty() {
+            let observed = Instant::now();
+            self.latest =
+                self.tracker
+                    .update_batch(samples, observed.duration_since(self.started), geoip);
+            self.last_sample = Some(observed);
         }
         loop {
             match self.stderr.read(&mut chunk) {
@@ -293,6 +299,32 @@ mod terminal_tests {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].name, "Example");
         assert_eq!((samples[0].bytes_in, samples[0].rate_in), (0, 0));
+    }
+    #[test]
+    fn queued_samples_keep_the_full_observation_rate() {
+        let gate = tempfile::tempdir().unwrap();
+        let ready = gate.path().join("ready");
+        let written = gate.path().join("written");
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf ',bytes_in,bytes_out,\nExample.999999,100,50,\n,bytes_in,bytes_out,\n'; while ! test -f \"$1\"; do sleep .01; done; printf 'Example.999999,200,100,\n,bytes_in,bytes_out,\nExample.999999,300,150,\n,bytes_in,bytes_out,\n'; : >\"$2\"; sleep 20", "fixture"]);
+        command.arg(&ready).arg(&written);
+        let mut monitor = Monitor::spawn(command).unwrap();
+        let mut geoip = GeoIp::default();
+        let cancel = AtomicBool::new(false);
+        let first = monitor.poll(&mut geoip, &cancel).unwrap();
+        assert_eq!((first[0].bytes_in, first[0].rate_in), (0, 0));
+        std::fs::write(ready, b"ready").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !written.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(written.exists());
+        // Simulate a delayed consumer without making the test wait for two seconds.
+        monitor.started = Instant::now() - Duration::from_secs(2);
+        let buffered = monitor.poll(&mut geoip, &cancel).unwrap();
+        assert_eq!((buffered[0].bytes_in, buffered[0].bytes_out), (200, 100));
+        assert!((95..=105).contains(&buffered[0].rate_in));
+        assert!((45..=55).contains(&buffered[0].rate_out));
     }
     #[test]
     fn cancellation_interrupts_first_sample_wait_and_reaps_monitor() {

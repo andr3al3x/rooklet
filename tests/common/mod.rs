@@ -131,5 +131,6 @@ pub fn snapshot() -> Snapshot {
         network,
         geoip: Some("DB-IP Lite · fixture country data · CC BY 4.0".into()),
         notices,
+        permission_paths: Default::default(),
     }
 }

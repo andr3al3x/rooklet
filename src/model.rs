@@ -112,6 +112,9 @@ pub struct Snapshot {
     pub network: NetworkStatus,
     pub geoip: Option<String>,
     pub notices: Vec<String>,
+    /// Local filesystem evidence; excluded from configuration and JSON output.
+    #[serde(skip)]
+    pub permission_paths: crate::permissions::Paths,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -131,6 +131,7 @@ fn on_disk_bundle_resolution_handles_nested_helpers_aliases_and_unrelated_names(
         name: "nested bundle".into(),
         blocked: true,
     });
+    snapshot.permission_paths = xield::permissions::Paths::capture(&snapshot);
     let resolution = Index::new(&snapshot).activity(&snapshot.activity[0]);
     #[cfg(unix)]
     assert_eq!(resolution.state, IncomingState::Mixed);
@@ -192,7 +193,71 @@ fn standalone_executable_alias_matches_identity_without_rewriting_captured_targe
         name: "alias".into(),
         blocked: true,
     }];
+    snapshot.permission_paths = xield::permissions::Paths::capture(&snapshot);
     let resolution = Index::new(&snapshot).activity(&snapshot.activity[0]);
     assert_eq!(resolution.state, IncomingState::Block);
     assert_eq!(resolution.paths, vec![alias.to_string_lossy().into_owned()]);
+    // Once captured by the worker, resolution and rendering are pure even if
+    // the alias disappears or its volume becomes unavailable.
+    std::fs::remove_file(&alias).unwrap();
+    let mut app = App::new(snapshot);
+    assert_eq!(
+        app.incoming(&app.snapshot.activity[0]).state,
+        IncomingState::Block
+    );
+    app.filters[0] = "incoming:block".into();
+    assert_eq!(app.activity_rows().len(), 1);
+    assert!(text(&app, 120, 34).contains("Block"));
+}
+
+#[cfg(unix)]
+#[test]
+fn frozen_alias_evidence_survives_exit_and_unfreeze_uses_current_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let original = directory.path().join("original");
+    let replacement = directory.path().join("replacement");
+    let alias = directory.path().join("alias");
+    std::fs::write(&original, "fixture").unwrap();
+    std::fs::write(&replacement, "fixture").unwrap();
+    std::os::unix::fs::symlink(&original, &alias).unwrap();
+    let mut snapshot = fixture();
+    snapshot.activity[0].path = Some(alias.to_string_lossy().into_owned());
+    snapshot.activity[0].identities.clear();
+    snapshot.applications = vec![
+        Application {
+            path: original.to_string_lossy().into_owned(),
+            name: "original".into(),
+            blocked: true,
+        },
+        Application {
+            path: replacement.to_string_lossy().into_owned(),
+            name: "replacement".into(),
+            blocked: false,
+        },
+    ];
+    snapshot.permission_paths = xield::permissions::Paths::capture(&snapshot);
+    let mut app = App::new(snapshot.clone());
+    key(&mut app, KeyCode::Char(' '));
+    let mut next = snapshot.clone();
+    next.activity.clear();
+    next.permission_paths = xield::permissions::Paths::capture(&next);
+    app.update(next, false);
+    assert_eq!(
+        app.incoming(&app.snapshot.activity[0]).state,
+        IncomingState::Block
+    );
+
+    std::fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(&replacement, &alias).unwrap();
+    snapshot.permission_paths = xield::permissions::Paths::capture(&snapshot);
+    app.update(snapshot, false);
+    assert_eq!(
+        app.incoming(&app.snapshot.activity[0]).state,
+        IncomingState::Block
+    );
+    key(&mut app, KeyCode::Char(' '));
+    assert_eq!(
+        app.incoming(&app.snapshot.activity[0]).state,
+        IncomingState::Allow
+    );
 }

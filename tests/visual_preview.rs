@@ -33,6 +33,8 @@ fn export_terminal_cells() {
     for (name, width, height) in [
         ("activity", 120, 34),
         ("activity", 80, 24),
+        ("network-filtered", 120, 34),
+        ("network-filtered", 80, 24),
         ("settings", 120, 34),
         ("unavailable", 80, 24),
         ("profiles", 120, 34),
@@ -50,6 +52,14 @@ fn export_terminal_cells() {
         });
         if name == "settings" {
             app.view = View::Settings;
+        } else if name == "network-filtered" {
+            app.view = View::Network;
+            let mut second = app.snapshot.network.rules[0].clone();
+            second.id = "second-rule".into();
+            second.name = "Second target".into();
+            app.snapshot.network.rules.push(second);
+            app.filters[2] = "Second target".into();
+            app.handle(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         } else if name == "activity" {
             app.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         }

@@ -1,6 +1,6 @@
 //! Join registered ALF executable entries to verified Activity app bundles.
 use crate::{
-    model::{Application, ProcessActivity, Snapshot},
+    model::{ProcessActivity, Snapshot},
     process,
 };
 use std::{collections::HashMap, path::Path};
@@ -35,8 +35,48 @@ pub struct Index {
     entries: HashMap<String, bool>,
     bundles: HashMap<String, Vec<String>>,
     executables: HashMap<String, Vec<String>>,
+    canonical: HashMap<String, String>,
+}
+/// Filesystem evidence captured by the backend, never during rendering or input.
+#[derive(Debug, Clone, Default)]
+pub struct Paths {
+    canonical: HashMap<String, String>,
+    activity: HashMap<String, String>,
+    bundles: HashMap<String, String>,
+}
+impl Paths {
+    pub fn capture(snapshot: &Snapshot) -> Self {
+        let mut paths = Self::default();
+        for application in &snapshot.applications {
+            let canonical = canonical_key(&application.path);
+            if let Some(bundle) = registered_bundle(Path::new(&canonical)) {
+                paths.bundles.insert(application.path.clone(), bundle);
+            }
+            paths.canonical.insert(application.path.clone(), canonical);
+        }
+        for process in &snapshot.activity {
+            if let Some(path) = &process.path {
+                paths
+                    .activity
+                    .entry(path.clone())
+                    .or_insert_with(|| canonical_key(path));
+            }
+        }
+        paths
+    }
+    fn key<'a>(&'a self, path: &'a str) -> &'a str {
+        self.canonical.get(path).map(String::as_str).unwrap_or(path)
+    }
+    /// Freeze process identity evidence without freezing current ALF registrations.
+    pub(crate) fn preserve_activity(&mut self, previous: &Self) {
+        self.activity = previous.activity.clone();
+    }
+    fn activity_key<'a>(&'a self, path: &'a str) -> &'a str {
+        self.activity.get(path).map(String::as_str).unwrap_or(path)
+    }
 }
 impl Index {
+    /// Build a pure lookup from captured paths and process identities.
     pub fn new(snapshot: &Snapshot) -> Self {
         let captured: HashMap<_, _> = snapshot
             .activity
@@ -51,22 +91,29 @@ impl Index {
             .collect();
         let mut index = Self {
             available: snapshot.applications_available,
+            canonical: snapshot.permission_paths.activity.clone(),
             ..Self::default()
         };
         for application in &snapshot.applications {
             index
                 .executables
-                .entry(canonical_key(&application.path))
+                .entry(snapshot.permission_paths.key(&application.path).to_owned())
                 .or_default()
                 .push(application.path.clone());
             index
                 .entries
                 .insert(application.path.clone(), application.blocked);
-            if let Some(bundle) = registered_bundle(application).or_else(|| {
-                captured
-                    .get(application.path.as_str())
-                    .map(|path| canonical_key(path))
-            }) {
+            if let Some(bundle) = snapshot
+                .permission_paths
+                .bundles
+                .get(&application.path)
+                .cloned()
+                .or_else(|| {
+                    captured
+                        .get(application.path.as_str())
+                        .map(|path| snapshot.permission_paths.activity_key(path).to_owned())
+                })
+            {
                 index
                     .bundles
                     .entry(bundle)
@@ -91,11 +138,11 @@ impl Index {
                 paths: Vec::new(),
             };
         };
-        let key = canonical_key(path);
+        let key = self.canonical.get(path).map(String::as_str).unwrap_or(path);
         let paths = self
             .bundles
-            .get(&key)
-            .or_else(|| self.executables.get(&key))
+            .get(key)
+            .or_else(|| self.executables.get(key))
             .cloned()
             .unwrap_or_default();
         let blocked = paths
@@ -117,15 +164,14 @@ fn canonical_key(path: &str) -> String {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|_| path.to_owned())
 }
-fn registered_bundle(application: &Application) -> Option<String> {
-    let path = Path::new(&application.path).canonicalize().ok()?;
+fn registered_bundle(path: &Path) -> Option<String> {
     let bundle = if path.is_dir()
         && path.extension().is_some_and(|extension| extension == "app")
         && path.join("Contents/Info.plist").is_file()
     {
         process::verified_bundle(&path.join("Contents/Info.plist"))?
     } else {
-        process::verified_bundle(&path)?
+        process::verified_bundle(path)?
     };
     Some(bundle.to_string_lossy().into_owned())
 }

@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn reporting_without_a_new_observation_preserves_snapshot_age() {
         let mut app = App::new(crate::model::Snapshot::default());
-        app.updated_at = std::time::Instant::now() - std::time::Duration::from_secs(6);
+        app.updated_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(6));
         app.busy = true;
         app.termination_report(&crate::process::TerminationReport {
             attempted: 1,

@@ -88,13 +88,12 @@ impl Backend {
                     .context("unable to locate xield executable")?
                     .canonicalize()?;
                 let args = vec!["network".into(), "apply".into(), "--stdin".into()];
-                command::run_with_timeout(
+                command::run_transaction(
                     &executable,
                     &args,
                     Some(&serde_json::to_vec(&rules)?),
                     true,
                     &self.cancel,
-                    Duration::from_secs(90),
                 )?;
             }
             Mutation::Setting(setting, value) => alf::set_setting(setting, value, &self.cancel)?,

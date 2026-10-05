@@ -107,7 +107,7 @@ fn network_editor_is_global_and_validates_before_confirmation() {
 fn unfreeze_after_failed_poll_never_restores_firewall_health() {
     let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Char(' ')));
-    app.failed("statistics disconnected".into(), false);
+    app.observation_failed("statistics disconnected".into());
     app.handle(key(KeyCode::Char(' ')));
     assert!(app.snapshot.firewall.is_none());
 }
@@ -172,6 +172,85 @@ fn grouped_app_selection_and_expansion_survive_helper_pid_changes() {
             .any(|row| matches!(row, xield::app::ActivityRow::Connection(_, _)))
     );
 }
+
+#[test]
+fn expansion_history_is_pruned_during_process_churn() {
+    let mut app = App::new(common::snapshot());
+    for generation in 0..100 {
+        app.handle(key(KeyCode::Enter));
+        assert_eq!(app.expanded.len(), 1);
+        let mut next = common::snapshot();
+        next.activity.truncate(1);
+        next.activity[0].path = Some(format!("/fixture/Generation-{generation}.app"));
+        app.update(next, false);
+        assert!(app.expanded.is_empty());
+    }
+}
+
+#[test]
+fn standalone_expansion_does_not_survive_pid_reuse() {
+    let mut snapshot = common::snapshot();
+    snapshot.activity = vec![snapshot.activity[2].clone()];
+    let process = &mut snapshot.activity[0];
+    assert!(!process.path.as_ref().unwrap().ends_with(".app"));
+    let mut identity = process
+        .identities
+        .first()
+        .cloned()
+        .unwrap_or_else(|| common::snapshot().activity[0].identities[0].clone());
+    identity.pid = process.pid;
+    identity.path = process.path.clone().unwrap();
+    identity.bundle_path = None;
+    process.identities = vec![identity];
+    let mut app = App::new(snapshot);
+    app.handle(key(KeyCode::Enter));
+    assert_eq!(app.expanded.len(), 1);
+    let mut next = app.snapshot.clone();
+    next.activity[0].identities[0].pid_version += 1;
+    next.activity[0].identities[0].start_sec += 1;
+    app.update(next, false);
+    assert!(app.expanded.is_empty());
+}
+
+#[test]
+fn uncaptured_process_expansion_is_limited_to_the_current_observation() {
+    let mut snapshot = common::snapshot();
+    snapshot.activity = vec![snapshot.activity[2].clone()];
+    snapshot.activity[0].identities.clear();
+    let mut app = App::new(snapshot);
+    app.handle(key(KeyCode::Enter));
+    assert_eq!(app.expanded.len(), 1);
+    app.update(app.snapshot.clone(), false);
+    assert!(app.expanded.is_empty());
+}
+
+#[test]
+fn filtered_network_rows_keep_saved_first_match_positions() {
+    let mut snapshot = common::snapshot();
+    let mut second = snapshot.network.rules[0].clone();
+    second.id = "second-rule".into();
+    second.name = "Second target".into();
+    snapshot.network.rules.push(second);
+    let mut app = App::new(snapshot);
+    app.view = View::Network;
+    app.filters[2] = "Second target".into();
+    for (width, height) in [(80, 24), (120, 34)] {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| ui::draw(frame, &app, Theme::Dark))
+            .unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("02 on"));
+        assert!(!text.contains("01 on"));
+    }
+    assert_eq!(app.rule_rows()[0].0, 1);
+}
 #[test]
 fn editing_a_disabled_rule_preserves_its_disabled_state() {
     let mut snapshot = common::snapshot();
@@ -212,7 +291,7 @@ fn country_update_is_explicit_unprivileged_and_serialized() {
     assert!(!app.handle(key(KeyCode::Char('u'))).authenticate);
     app.handle(key(KeyCode::Enter));
     assert!(app.popup.is_none());
-    app.failed("Country download failed".into(), true);
+    app.operation_failed("Country download failed".into());
     assert!(!app.busy);
     assert_eq!(app.snapshot.firewall, original);
     assert!(app.notice.as_ref().unwrap().error);

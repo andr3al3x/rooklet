@@ -100,6 +100,8 @@ impl App {
                 self.paused = !self.paused;
                 if !self.paused {
                     self.snapshot.activity = self.live_activity.clone();
+                    self.snapshot.permission_paths = self.live_paths.clone();
+                    self.prune_expanded();
                     self.reconcile();
                 }
             }
@@ -160,7 +162,7 @@ impl App {
                 }
             }
             KeyCode::Char('e') | KeyCode::Enter if !self.busy && self.view == View::Network => {
-                if let Some(rule) = self.rules().get(self.selected_index().unwrap_or(0)) {
+                if let Some((_, rule)) = self.rule_rows().get(self.selected_index().unwrap_or(0)) {
                     self.popup = Some(Popup::Network {
                         draft: NetworkDraft::from_rule(rule),
                         field: 0,

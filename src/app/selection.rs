@@ -80,13 +80,14 @@ impl App {
             })
             .collect()
     }
-    pub fn rules(&self) -> Vec<&NetworkRule> {
+    pub fn rule_rows(&self) -> Vec<(usize, &NetworkRule)> {
         let filter = self.filters[2].to_lowercase();
         self.snapshot
             .network
             .rules
             .iter()
-            .filter(|rule| {
+            .enumerate()
+            .filter(|(_, rule)| {
                 format!("{} {} {}", rule.name, rule.destination, rule.action)
                     .to_lowercase()
                     .contains(&filter)
@@ -97,7 +98,7 @@ impl App {
         match self.view {
             View::Activity => self.activity_rows().iter().map(ActivityRow::key).collect(),
             View::Applications => self.applications().iter().map(|a| a.path.clone()).collect(),
-            View::Network => self.rules().iter().map(|r| r.id.clone()).collect(),
+            View::Network => self.rule_rows().iter().map(|(_, r)| r.id.clone()).collect(),
             View::Settings => SETTINGS.iter().map(|(s, _)| s.to_string()).collect(),
         }
     }
@@ -117,6 +118,23 @@ impl App {
             self.selection[self.view.index()] = keys.first().cloned();
         }
     }
+    pub(super) fn prune_expanded(&mut self) {
+        let present: std::collections::HashSet<_> = self
+            .snapshot
+            .activity
+            .iter()
+            .filter(|process| {
+                self.paused
+                    || app_path(process).is_some()
+                    || process
+                        .identities
+                        .iter()
+                        .any(|identity| identity.pid == process.pid)
+            })
+            .map(process_key)
+            .collect();
+        self.expanded.retain(|key| present.contains(key));
+    }
     pub(super) fn navigate(&mut self, delta: isize) {
         let keys = self.keys();
         if keys.is_empty() {
@@ -132,13 +150,26 @@ impl App {
     }
 }
 pub fn process_key(process: &ProcessActivity) -> String {
-    if let Some(path) = &process.path
-        && std::path::Path::new(path)
-            .extension()
-            .is_some_and(|e| e == "app")
-    {
+    if let Some(path) = app_path(process) {
         format!("app:{path}")
     } else {
-        format!("process:{}", process.pid)
+        match process
+            .identities
+            .iter()
+            .find(|identity| identity.pid == process.pid)
+        {
+            Some(identity) => format!(
+                "process:{}:{}:{}:{}",
+                process.pid, identity.pid_version, identity.start_sec, identity.start_usec
+            ),
+            None => format!("process:{}", process.pid),
+        }
     }
+}
+fn app_path(process: &ProcessActivity) -> Option<&str> {
+    process.path.as_deref().filter(|path| {
+        std::path::Path::new(path)
+            .extension()
+            .is_some_and(|extension| extension == "app")
+    })
 }

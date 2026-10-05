@@ -58,13 +58,12 @@ fn network_change(change: NetworkChange<'_>) -> Result<()> {
     if input.is_some() {
         args.push("--stdin".into());
     }
-    xield::command::run_with_timeout(
+    xield::command::run_transaction(
         &std::env::current_exe()?,
         &args,
         input.as_deref(),
         true,
         &AtomicBool::new(false),
-        Duration::from_secs(90),
     )?;
     Ok(())
 }

@@ -116,6 +116,9 @@ impl App {
 
     pub fn profiles_finished(&mut self, snapshot: Snapshot, outcome: ProfileOutcome) {
         self.update(snapshot, false);
+        self.profile_completed(outcome);
+    }
+    pub fn profile_completed(&mut self, outcome: ProfileOutcome) {
         self.busy = false;
         let pending = self.pending_profile.take();
         match outcome {
@@ -271,7 +274,7 @@ mod tests {
         let mut app = App::new(snapshot());
         ready(&mut app);
         app.handle(key(KeyCode::Enter));
-        app.failed("unavailable".into(), true);
+        app.operation_failed("unavailable".into());
         assert!(matches!(
             app.popup,
             Some(Popup::Profiles { loading: false, .. })

@@ -19,6 +19,7 @@ use xield::{
 
 pub(super) struct Update {
     pub result: Result<Snapshot>,
+    pub operation_error: Option<anyhow::Error>,
     pub kind: UpdateKind,
     pub termination: Option<TerminationReport>,
     pub profile: Option<ProfileOutcome>,
@@ -119,6 +120,7 @@ impl Worker {
                             &responses,
                             Update {
                                 result: Err(error),
+                                operation_error: None,
                                 kind: UpdateKind::Observation,
                                 termination: None,
                                 profile: None,
@@ -129,24 +131,11 @@ impl Worker {
                 };
                 observe(work, responses, &worker_cancel, |work| {
                     let kind = work.as_ref().map_or(UpdateKind::Observation, Work::kind);
-                    let report = match work.map(|work| work.run(&mut backend)).transpose() {
-                        Ok(report) => report.unwrap_or_default(),
-                        Err(error) => {
-                            return Update {
-                                result: Err(error),
-                                kind,
-                                termination: None,
-                                profile: None,
-                            };
-                        }
-                    };
-                    // Preserve delivered signals even if the subsequent observation fails.
-                    Update {
-                        result: backend.snapshot(),
-                        kind,
-                        termination: report.termination,
-                        profile: report.profile,
-                    }
+                    let report = work
+                        .map(|work| work.run(&mut backend))
+                        .transpose()
+                        .map(Option::unwrap_or_default);
+                    observe_after_work(kind, report, || backend.snapshot())
                 });
             })
             .context("cannot start backend worker")?;
@@ -195,6 +184,26 @@ impl Worker {
             self.in_flight = false;
         }
         updates
+    }
+}
+
+fn observe_after_work(
+    kind: UpdateKind,
+    report: Result<WorkReport>,
+    snapshot: impl FnOnce() -> Result<Snapshot>,
+) -> Update {
+    let (report, operation_error) = match report {
+        Ok(report) => (report, None),
+        Err(error) => (WorkReport::default(), Some(error)),
+    };
+    // Failed operations may have changed state. Read back even after a partial
+    // failure, and keep the action error separate from observation availability.
+    Update {
+        result: snapshot(),
+        operation_error,
+        kind,
+        termination: report.termination,
+        profile: report.profile,
     }
 }
 

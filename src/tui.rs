@@ -81,7 +81,7 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
                         if matches!(operation, ProfileOperation::Apply(_)) {
                             match authenticate_in_terminal(&mut terminal)? {
                                 Ok(()) => worker.profile(operation)?,
-                                Err(error) => app.failed(error.to_string(), true),
+                                Err(error) => app.operation_failed(error.to_string()),
                             }
                         } else {
                             worker.profile(operation)?;
@@ -90,7 +90,7 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
                     if let Some(mutation) = effect.mutation {
                         match authenticate_in_terminal(&mut terminal)? {
                             Ok(()) => worker.submit(mutation)?,
-                            Err(error) => app.failed(error.to_string(), true),
+                            Err(error) => app.operation_failed(error.to_string()),
                         }
                     }
                     dirty = true;
@@ -114,20 +114,35 @@ fn authenticate_in_terminal(terminal: &mut TerminalSession) -> Result<Result<()>
 }
 
 fn apply_update(app: &mut App, update: Update, closing: bool) -> Result<()> {
+    if let Some(error) = update.operation_error {
+        let message = match update.result {
+            Ok(snapshot) => {
+                app.update(snapshot, false);
+                format!("{error:#}")
+            }
+            Err(refresh) => {
+                let message = format!("{error:#}; status refresh failed: {refresh:#}");
+                app.invalidate_observation(&message);
+                message
+            }
+        };
+        app.operation_failed(message.clone());
+        if closing {
+            anyhow::bail!("{message}");
+        }
+        return Ok(());
+    }
     if let Some(outcome) = update.profile {
         match update.result {
             Ok(snapshot) => app.profiles_finished(snapshot, outcome),
             Err(error) => {
-                app.profiles_finished(app.snapshot.clone(), outcome);
+                app.profile_completed(outcome);
                 let summary = app
                     .notice
                     .as_ref()
                     .map(|notice| notice.text.clone())
                     .unwrap_or_default();
-                app.failed(
-                    format!("{summary}; status refresh failed: {error:#}"),
-                    false,
-                );
+                app.observation_failed(format!("{summary}; status refresh failed: {error:#}"));
             }
         }
         if closing
@@ -149,10 +164,7 @@ fn apply_update(app: &mut App, update: Update, closing: bool) -> Result<()> {
                     .map(|notice| notice.text.clone())
                     .unwrap_or_default();
                 // A failed observation cannot make the cached state fresh or healthy.
-                app.failed(
-                    format!("{summary}; activity refresh failed: {error:#}"),
-                    false,
-                );
+                app.observation_failed(format!("{summary}; activity refresh failed: {error:#}"));
             }
         }
         if closing
@@ -167,7 +179,15 @@ fn apply_update(app: &mut App, update: Update, closing: bool) -> Result<()> {
         Ok(snapshot) if update.kind == UpdateKind::GeoIp => app.geoip_updated(snapshot),
         Ok(snapshot) => app.update(snapshot, update.kind == UpdateKind::Firewall),
         Err(error) if closing && update.kind != UpdateKind::Observation => return Err(error),
-        Err(error) => app.failed(format!("{error:#}"), update.kind != UpdateKind::Observation),
+        Err(error) => {
+            let message = format!("{error:#}");
+            if update.kind == UpdateKind::Observation {
+                app.observation_failed(message);
+            } else {
+                app.invalidate_observation(&message);
+                app.operation_failed(message);
+            }
+        }
     }
     Ok(())
 }

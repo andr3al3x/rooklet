@@ -57,7 +57,7 @@ pub(super) fn draw(
         );
         return;
     }
-    let rows = app.rules();
+    let rows = app.rule_rows();
     if rows.is_empty() {
         super::message(
             frame,
@@ -70,12 +70,11 @@ pub(super) fn draw(
     }
     let data = rows
         .iter()
-        .enumerate()
-        .map(|(index, rule)| {
+        .map(|(position, rule)| {
             Row::new(vec![
                 Cell::from(format!(
                     "{:02} {}",
-                    index + 1,
+                    position + 1,
                     if rule.enabled { "on" } else { "off" }
                 )),
                 Cell::from(clean(&rule.name)),
@@ -103,7 +102,7 @@ pub(super) fn draw(
                 Constraint::Min(14),
                 Constraint::Min(20),
                 Constraint::Length(9),
-                Constraint::Length(5),
+                Constraint::Length(6),
             ],
         )
         .header(
@@ -118,6 +117,9 @@ pub(super) fn draw(
         parts[1],
         &mut *state,
     );
-    let keys = rows.iter().map(|rule| rule.id.clone()).collect::<Vec<_>>();
+    let keys = rows
+        .iter()
+        .map(|(_, rule)| rule.id.clone())
+        .collect::<Vec<_>>();
     hits.table(parts[1], 2, state.offset(), View::Network, &keys);
 }

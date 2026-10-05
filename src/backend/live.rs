@@ -123,6 +123,7 @@ impl Live {
             snapshot.notices.push(error.clone());
         }
         snapshot.notices.push("Traffic totals start at the first observation. Activity is best effort; hidden processes and wildcard UDP peers may be unavailable. Application firewall controls incoming connections.".into());
+        snapshot.permission_paths = crate::permissions::Paths::capture(&snapshot);
         ensure!(!cancel.load(Ordering::Relaxed), "snapshot cancelled");
         Ok(snapshot)
     }

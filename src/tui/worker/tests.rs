@@ -17,6 +17,7 @@ fn snapshot(stealth: bool) -> Snapshot {
 fn update(result: Result<Snapshot>) -> Update {
     Update {
         result,
+        operation_error: None,
         kind: UpdateKind::Observation,
         termination: None,
         profile: None,
@@ -236,4 +237,40 @@ fn profile_response_retains_operation_kind_and_payload() {
     let result = wait_for(&mut worker, UpdateKind::Profile);
     assert!(matches!(result.profile, Some(ProfileOutcome::Listed(names)) if names == ["Home"]));
     assert!(!worker.in_flight);
+}
+
+#[test]
+fn failed_operation_still_reads_back_partial_changes() {
+    let mut observed = false;
+    let update = observe_after_work(
+        UpdateKind::Firewall,
+        Err(anyhow::anyhow!("second application change failed")),
+        || {
+            observed = true;
+            Ok(snapshot(true))
+        },
+    );
+    assert!(observed);
+    assert!(update.result.unwrap().firewall.unwrap().stealth);
+    assert!(
+        update
+            .operation_error
+            .unwrap()
+            .to_string()
+            .contains("second application")
+    );
+}
+
+#[test]
+fn action_error_and_failed_readback_are_both_retained() {
+    let update = observe_after_work(
+        UpdateKind::Profile,
+        Err(anyhow::anyhow!("restoration failed")),
+        || Err(anyhow::anyhow!("observation failed")),
+    );
+    assert_eq!(
+        update.operation_error.unwrap().to_string(),
+        "restoration failed"
+    );
+    assert_eq!(update.result.unwrap_err().to_string(), "observation failed");
 }

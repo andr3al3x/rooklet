@@ -18,7 +18,7 @@ pub use profiles::{ProfileOperation, ProfileOutcome};
 pub use rules::RuleProbe;
 pub use selection::{ActivityRow, process_key};
 
-use crate::model::{Mutation, ProcessActivity, Setting, Snapshot};
+use crate::model::{Mutation, NetworkStatus, ProcessActivity, Setting, Snapshot};
 use std::{
     collections::{HashSet, VecDeque},
     time::Instant,
@@ -93,7 +93,8 @@ pub struct App {
     pub chart: VecDeque<(u64, u64)>,
     pub notice: Option<Notice>,
     live_activity: Vec<ProcessActivity>,
-    updated_at: Instant,
+    live_paths: crate::permissions::Paths,
+    updated_at: Option<Instant>,
     last_mouse_click: Option<(View, String, Instant)>,
     pending_profile: Option<profiles::Pending>,
 }
@@ -101,6 +102,7 @@ impl App {
     pub fn new(snapshot: Snapshot) -> Self {
         let mut app = Self {
             live_activity: snapshot.activity.clone(),
+            live_paths: snapshot.permission_paths.clone(),
             snapshot,
             view: View::Activity,
             popup: None,
@@ -113,7 +115,7 @@ impl App {
             expanded: HashSet::new(),
             chart: VecDeque::new(),
             notice: None,
-            updated_at: Instant::now(),
+            updated_at: Some(Instant::now()),
             last_mouse_click: None,
             pending_profile: None,
         };
@@ -122,7 +124,11 @@ impl App {
     }
     pub fn update(&mut self, mut snapshot: Snapshot, mutation: bool) {
         self.live_activity = snapshot.activity.clone();
+        self.live_paths = snapshot.permission_paths.clone();
         if self.paused {
+            snapshot
+                .permission_paths
+                .preserve_activity(&self.snapshot.permission_paths);
             snapshot.activity = self.snapshot.activity.clone();
         } else {
             self.chart
@@ -134,24 +140,24 @@ impl App {
             }
         }
         self.snapshot = snapshot;
-        self.updated_at = Instant::now();
+        self.prune_expanded();
+        self.updated_at = Some(Instant::now());
         if mutation {
             self.busy = false;
             self.notify("Change verified against macOS".into(), false);
         }
         self.reconcile();
     }
-    pub fn failed(&mut self, text: String, mutation: bool) {
-        if mutation {
-            self.busy = false;
-            self.pending_profile = None;
-            if let Some(Popup::Profiles { loading, .. }) = &mut self.popup {
-                *loading = false;
-            }
-        } else {
-            self.snapshot.notices = vec![clean(&text)];
-            self.snapshot.firewall = None;
+    pub fn operation_failed(&mut self, text: String) {
+        self.busy = false;
+        self.pending_profile = None;
+        if let Some(Popup::Profiles { loading, .. }) = &mut self.popup {
+            *loading = false;
         }
+        self.notify(text, true);
+    }
+    pub fn observation_failed(&mut self, text: String) {
+        self.invalidate_observation(&text);
         self.notify(text, true);
     }
     pub fn geoip_updated(&mut self, snapshot: Snapshot) {
@@ -170,7 +176,26 @@ impl App {
         });
     }
     pub fn stale(&self) -> bool {
-        self.updated_at.elapsed().as_secs() > 5
+        self.updated_at.is_none_or(|at| at.elapsed().as_secs() > 5)
+    }
+    pub fn invalidate_observation(&mut self, reason: &str) {
+        self.updated_at = None;
+        self.snapshot.notices = vec![clean(reason)];
+        self.snapshot.firewall = None;
+        self.snapshot.applications_available = false;
+        self.snapshot.applications.clear();
+        self.snapshot.permission_paths = Default::default();
+        self.snapshot.network = NetworkStatus {
+            message: Some(clean(reason)),
+            ..Default::default()
+        };
+        self.live_activity.clear();
+        self.live_paths = Default::default();
+        for process in &mut self.snapshot.activity {
+            process.rate_in = 0;
+            process.rate_out = 0;
+            process.identities.clear();
+        }
     }
     pub fn incoming(&self, process: &ProcessActivity) -> crate::permissions::Resolution {
         crate::permissions::Index::new(&self.snapshot).activity(process)

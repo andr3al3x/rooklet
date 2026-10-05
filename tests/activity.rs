@@ -95,6 +95,117 @@ fn totals_start_at_observation_rates_use_elapsed_and_resets_do_not_spike() {
     assert_eq!((next[0].bytes_in, next[0].rate_in), (1100, 100));
 }
 #[test]
+fn buffered_samples_share_the_read_interval_and_keep_counter_resets() {
+    let mut tracker = Tracker::default();
+    let mut geoip = GeoIp::default();
+    let raw =
+        |incoming, outgoing| parse_csv(&sample(incoming, outgoing, incoming, outgoing)).unwrap();
+    tracker.update_batch(raw(100, 50), Duration::ZERO, &mut geoip);
+    let buffered = tracker.update_batch(
+        [raw(200, 100), raw(300, 150)].concat(),
+        Duration::from_secs(2),
+        &mut geoip,
+    );
+    assert_eq!(
+        (
+            buffered[0].bytes_in,
+            buffered[0].rate_in,
+            buffered[0].rate_out
+        ),
+        (200, 100, 50)
+    );
+    assert_eq!(buffered[0].connections[0].bytes_in, 200);
+    let reset = tracker.update_batch(
+        [raw(350, 180), raw(10, 20), raw(60, 40)].concat(),
+        Duration::from_secs(4),
+        &mut geoip,
+    );
+    assert_eq!(
+        (reset[0].bytes_in, reset[0].rate_in, reset[0].rate_out),
+        (300, 50, 25)
+    );
+    let next = tracker.update_batch(raw(160, 90), Duration::from_secs(5), &mut geoip);
+    assert_eq!((next[0].bytes_in, next[0].rate_in), (400, 100));
+}
+#[test]
+fn closely_spaced_samples_preserve_bytes_for_the_next_rate_interval() {
+    let mut tracker = Tracker::default();
+    let mut geoip = GeoIp::default();
+    let mut ingest = |incoming, millis| {
+        tracker.update(
+            parse_csv(&sample(incoming, 0, incoming, 0))
+                .unwrap()
+                .remove(0),
+            Duration::from_millis(millis),
+            &mut geoip,
+        )
+    };
+    ingest(100, 0);
+    let short = ingest(200, 10);
+    assert_eq!((short[0].bytes_in, short[0].rate_in), (100, 0));
+    let next = ingest(300, 1000);
+    assert_eq!((next[0].bytes_in, next[0].rate_in), (200, 200));
+}
+#[test]
+fn first_buffered_batch_starts_rates_at_its_final_observation() {
+    let mut tracker = Tracker::default();
+    let mut geoip = GeoIp::default();
+    let raw = |incoming| parse_csv(&sample(incoming, 0, incoming, 0)).unwrap();
+    let first = tracker.update_batch([raw(100), raw(200)].concat(), Duration::ZERO, &mut geoip);
+    assert_eq!((first[0].bytes_in, first[0].rate_in), (100, 0));
+    let next = tracker.update_batch(raw(300), Duration::from_secs(1), &mut geoip);
+    assert_eq!((next[0].bytes_in, next[0].rate_in), (200, 100));
+}
+#[test]
+fn buffered_app_rates_include_helpers_that_exit_before_the_last_sample() {
+    use xield::activity::RawProcess;
+    let temp = tempfile::tempdir().unwrap();
+    let bundle = temp.path().join("Example.app");
+    std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+    std::fs::write(bundle.join("Contents/Info.plist"), b"<plist/>").unwrap();
+    let executable = bundle.join("Contents/MacOS/Example");
+    std::fs::write(&executable, b"test executable").unwrap();
+    let executable = executable.to_string_lossy().into_owned();
+    let raw = |pid, incoming| RawProcess {
+        pid,
+        name: format!("worker-{pid}"),
+        bytes_in: incoming,
+        bytes_out: incoming / 2,
+        flows: Vec::new(),
+    };
+    let mut tracker = Tracker::default();
+    let mut geoip = GeoIp::default();
+    tracker.update_batch_with_paths(
+        vec![vec![raw(101, 100), raw(102, 100)]],
+        Duration::ZERO,
+        &mut geoip,
+        |_| Some(executable.clone()),
+    );
+    let buffered = tracker.update_batch_with_paths(
+        vec![vec![raw(101, 200), raw(102, 200)], vec![raw(101, 300)]],
+        Duration::from_secs(2),
+        &mut geoip,
+        |_| Some(executable.clone()),
+    );
+    assert_eq!(buffered.len(), 1);
+    assert_eq!(
+        (
+            buffered[0].bytes_in,
+            buffered[0].bytes_out,
+            buffered[0].rate_in,
+            buffered[0].rate_out
+        ),
+        (300, 150, 150, 75)
+    );
+    let next = tracker.update_with_paths(
+        vec![raw(101, 400)],
+        Duration::from_secs(3),
+        &mut geoip,
+        |_| Some(executable.clone()),
+    );
+    assert_eq!((next[0].bytes_in, next[0].rate_in), (400, 100));
+}
+#[test]
 fn local_and_missing_database_are_offline() {
     for address in [
         "127.0.0.1",

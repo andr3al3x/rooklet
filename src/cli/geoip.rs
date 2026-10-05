@@ -7,7 +7,10 @@ pub(super) fn run(command: GeoipCommand) -> Result<()> {
     match command {
         GeoipCommand::Update => {
             println!("Updating country database…");
-            println!("{}", xield::geoip::update(&AtomicBool::new(false))?);
+            println!(
+                "{}",
+                xield::clean(&xield::geoip::update(&AtomicBool::new(false))?)
+            );
         }
     }
     Ok(())

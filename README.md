@@ -143,10 +143,14 @@ TUI firewall changes require confirmation. Scroll long confirmations with ↑↓
 Page Up/Down, Home/End, or the mouse wheel to review every target. Xield validates
 targets before changing them and verifies each result. Application firewall
 operations are sequential; partial failures identify affected entries.
+Failed operations trigger a status readback. If that readback is unavailable,
+cached firewall controls become unavailable until a successful refresh.
 
 Authentication happens outside terminal raw mode. Xield never collects or stores
 passwords, and worker commands use noninteractive `sudo`. Quitting waits for an
 authorized mutation to finish. Applied settings remain after Xield exits.
+PF helpers retain individual tool deadlines and finish any restoration before
+the supervising process reports output or input errors.
 
 ## Optional network rules
 
@@ -259,7 +263,8 @@ proposal**, because observations do not identify connection direction. Review
 the editable fields and confirmation before applying; inbound rules use the
 local service port. The rule affects every app, not just the selected app.
 
-Rates use elapsed time between samples. Totals start at the first observation
+Rates average traffic over the elapsed time between observation reads, including
+samples buffered during backend work. Totals start at the first observation
 and preserve contributions across helper exits. Process totals are authoritative;
 child-flow totals are not added again. Peer counts represent observed
 endpoint/port/protocol combinations, not socket counts. Peer rates are unavailable.

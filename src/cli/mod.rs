@@ -14,11 +14,20 @@ use clap::Parser;
 use std::io::{self, IsTerminal};
 use xield::{
     backend::Backend,
+    clean, clean_multiline,
     model::{Action, Mutation},
 };
 
 pub(crate) fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::try_parse().unwrap_or_else(|error| {
+        let diagnostic = clean_multiline(&error.to_string());
+        if error.use_stderr() {
+            eprint!("{diagnostic}");
+        } else {
+            print!("{diagnostic}");
+        }
+        std::process::exit(error.exit_code());
+    });
     if let Some(command) = cli.command {
         if let CliCommand::Network { command } = command {
             return network::run(command);
@@ -54,22 +63,20 @@ fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
             );
             println!(
                 "PF: {}",
-                snapshot
-                    .network
-                    .message
-                    .as_deref()
-                    .unwrap_or(if snapshot.network.configured {
+                clean(snapshot.network.message.as_deref().unwrap_or(
+                    if snapshot.network.configured {
                         "configured"
                     } else {
                         "optional; not configured"
-                    })
+                    }
+                ))
             );
             println!(
                 "Country database: {}",
-                snapshot.geoip.as_deref().unwrap_or("optional; not loaded")
+                clean(snapshot.geoip.as_deref().unwrap_or("optional; not loaded"))
             );
             for notice in snapshot.notices {
-                println!("{notice}");
+                println!("{}", clean_multiline(&notice));
             }
             ensure!(
                 snapshot.firewall.is_some(),

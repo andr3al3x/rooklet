@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use std::fs;
-use xield::{backend::Backend, profile};
+use xield::{backend::Backend, clean, clean_multiline, profile};
 
 pub(super) fn run(command: ProfileCommand) -> Result<()> {
     match command {
@@ -25,7 +25,7 @@ pub(super) fn run(command: ProfileCommand) -> Result<()> {
                         )
                     })?;
                 write_json(&mut file, &profile)?;
-                println!("Exported {}", path.display());
+                println!("Exported {}", clean(&path.display().to_string()));
             } else {
                 print_json(&profile)?;
             }
@@ -44,7 +44,7 @@ pub(super) fn run(command: ProfileCommand) -> Result<()> {
             authenticate()?;
             let mut backend = Backend::new()?;
             let prepared = profile::prepare(&profile, &backend.snapshot()?)?;
-            eprintln!("{}", prepared.review());
+            eprintln!("{}", clean_multiline(&prepared.review()));
             profile::apply(&mut backend, &prepared)?;
             print_json(&backend.snapshot()?)?;
         }

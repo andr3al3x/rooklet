@@ -1,4 +1,6 @@
 //! Bounded, cancellable subprocess execution. Workers never prompt for credentials.
+mod transaction;
+
 use anyhow::{Context, Result, bail, ensure};
 #[cfg(unix)]
 use std::os::{fd::AsRawFd, unix::process::CommandExt};
@@ -32,7 +34,7 @@ pub fn run_combined(
 ) -> Result<String> {
     execute(path, args, input, privileged, cancel, true, TIMEOUT)
 }
-/// A larger total budget for a privileged helper that performs several bounded tools.
+/// A larger total budget for read-only helpers that perform several bounded tools.
 pub fn run_with_timeout(
     path: &Path,
     args: &[String],
@@ -47,15 +49,29 @@ pub fn run_with_timeout(
     );
     execute(path, args, input, privileged, cancel, false, timeout)
 }
-fn execute(
+/// Wait for an authorized Xield transaction helper to finish, including rollback.
+///
+/// Only cancellation before launch is honored. The helper must bound its individual
+/// tool calls and reap their children; an outer timeout could kill it during rollback.
+/// Output remains bounded and is drained even after exceeding the capture limit.
+pub fn run_transaction(
     path: &Path,
     args: &[String],
     input: Option<&[u8]>,
     privileged: bool,
     cancel: &AtomicBool,
-    combined: bool,
-    timeout: Duration,
 ) -> Result<String> {
+    transaction::run(prepare(path, args, input, privileged, cancel)?, input)
+        .with_context(|| format!("{} transaction helper", path.display()))
+}
+
+fn prepare(
+    path: &Path,
+    args: &[String],
+    input: Option<&[u8]>,
+    privileged: bool,
+    cancel: &AtomicBool,
+) -> Result<Command> {
     ensure!(
         path.is_absolute(),
         "command executable must be an absolute path"
@@ -83,7 +99,19 @@ fn execute(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     isolate(&mut command);
-    let mut child = command
+    Ok(command)
+}
+
+fn execute(
+    path: &Path,
+    args: &[String],
+    input: Option<&[u8]>,
+    privileged: bool,
+    cancel: &AtomicBool,
+    combined: bool,
+    timeout: Duration,
+) -> Result<String> {
+    let mut child = prepare(path, args, input, privileged, cancel)?
         .spawn()
         .with_context(|| format!("unable to start {}", path.display()))?;
     let result = (|| {
