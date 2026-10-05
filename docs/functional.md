@@ -153,6 +153,12 @@ The installer preserves quarantine and changes only the executable. Uninstall
 retains live firewall configuration and data; PF removal is a separate explicit
 operation. See [install.md](install.md).
 
+The Checks workflow builds and tests both native macOS architectures and retains
+binary build artifacts for 14 days. Pushed tags matching `v<Cargo version>` trigger the same
+validation before publishing both archives and checksums to GitHub Releases.
+Prerelease versions produce prereleases; failed draft uploads can be retried.
+See [build and release instructions](releases.md).
+
 Outgoing per-app enforcement, interactive approval of every new connection,
 packet capture, a complete blocked-attempt log, automatic boot reapplication,
 automatic profile switching, and timed rule expiry are not implemented. There
@@ -160,9 +166,9 @@ are no demo observations, legacy aliases, schema migrations, extensions, or
 notarization workflows.
 
 The project is an early release. Privileged mutation, connectivity enforcement,
-VPN coexistence, and reboot behavior need isolated integration testing. Intel
-and older macOS runtime behavior remain unverified. Diagnostic logs and observed
-traffic cannot replace those checks.
+VPN coexistence, and reboot behavior need isolated integration testing. Hosted
+Intel workflow execution and older macOS runtime behavior remain unverified.
+Diagnostic logs and observed traffic cannot replace those checks.
 
 PF is not a supported Apple product API, so macOS and other networking components
 can change its compatibility. See [PF scope and compatibility](network.md#scope-and-compatibility).

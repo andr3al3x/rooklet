@@ -31,6 +31,8 @@ for comfortable navigation; the minimum is 50 × 17. No patched font is required
 
 ## Binary installation (no Rust required)
 
+Download packages and checksums from
+[GitHub Releases](https://github.com/andr3al3x/rooklet/releases).
 Each archive includes a [short installation guide](docs/install.md), the binary,
 install/uninstall scripts, and the license.
 
@@ -463,7 +465,10 @@ counters, strict validation, configuration drift, cancellation, confirmations,
 mouse geometry, and rendering.
 Tests do not change the host firewall; PF syntax checks use `pfctl -n`, and native
 signal tests target only processes they create. GitHub Actions runs the full
-workspace on macOS and the platform-free core checks on Linux.
+workspace and packaging on native Apple silicon and Intel macOS 15 runners,
+portable core checks on Linux, and a full Rust 1.88 compiler check.
+Matching version tags publish the verified binary packages to GitHub Releases;
+see [build and release instructions](docs/releases.md).
 
 `make release` builds the Rust toolchain's native macOS target explicitly and
 prints the executable path under `target/<target-triple>/release/rooklet`.

@@ -6,6 +6,7 @@
 | [Functionality](functional.md) | Supported workflows, behavior, privileges, and product limits |
 | [Architectural decisions](adr/README.md) | Decision history, trade-offs, status, and the ADR template |
 | [Binary installation](install.md) | Standalone installation guide also shipped in release archives |
+| [Builds and releases](releases.md) | CI artifacts, version tags, publication, and failed-release retries |
 | [PF network rules](network.md) | Rule syntax, setup, ownership, drift, and status semantics |
 | [Logging decision and contract](adr/0007-private-bounded-diagnostics.md) | Rationale, event levels, privacy, storage bounds, and shutdown behavior |
 

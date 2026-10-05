@@ -202,10 +202,17 @@ structured JSON output preserves domain values.
 | Worker and terminal lifecycle | [`src/tui/`](../src/tui/); bounded work, shutdown, and readback failure tests |
 | Domain | [`rooklet-core`](../crates/rooklet-core/); portable parser, schema, compiler, analysis, and grouping tests |
 | System operations | [`rooklet-macos`](../crates/rooklet-macos/); fake transaction adapters, native identity/counter checks, harmless subprocesses, and owned-child signal tests |
-| Release | [`scripts/`](../scripts/), [`Makefile`](../Makefile), [CI](../.github/workflows/check.yml); explicit target builds and verified binary archives |
+| Release | [`scripts/`](../scripts/), [`Makefile`](../Makefile), [Checks](../.github/workflows/check.yml), [Release](../.github/workflows/release.yml); native target validation, verified archives, and tag-driven publication |
 
 `make check`, `make test`, and `make package` cover the macOS workspace. CI also
-checks the core on Linux. UI changes require inspection of actual Ratatui cells
+checks both native macOS architectures, the core on Linux, and the full workspace
+with Rust 1.88. Matching version tags reuse these checks before publishing both
+archive/checksum pairs to GitHub Releases. Build jobs have read-only tokens;
+publication alone requests repository write access. See
+[ADR 0010](adr/0010-verified-native-release-publication.md) and
+[release instructions](releases.md).
+UI changes require inspection of actual Ratatui cells
 at multiple sizes. Tests do not mutate the host firewall; privileged mutation,
 connectivity, VPN coexistence, and reboot behavior still require isolated live
-integration testing. Intel and older macOS runtime coverage remains unverified.
+integration testing. Hosted workflow execution has not been validated locally;
+older macOS compatibility still requires runtime testing.

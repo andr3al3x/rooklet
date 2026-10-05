@@ -17,6 +17,7 @@ current design; [functionality](../functional.md) describes supported behavior.
 | [0007](0007-private-bounded-diagnostics.md) | Use optional private, bounded file diagnostics | Accepted |
 | [0008](0008-identity-bound-process-signaling.md) | Bind confirmed process signals to captured kernel identity | Accepted |
 | [0009](0009-privilege-owned-tool-supervision.md) | Supervise privileged tools inside their owning root helper | Accepted |
+| [0010](0010-verified-native-release-publication.md) | Validate native packages before tag-driven GitHub release publication | Accepted |
 
 Records 0001–0008 are retrospective descriptions of implemented decisions at
 the time of recording. Their recorded date is not an asserted historical decision
