@@ -1,5 +1,5 @@
 //! Filtered rows and stable selection identities.
-use super::{App, SETTINGS, View};
+use super::{App, SETTINGS, View, activity_query::ActivityQuery};
 use crate::model::{Application, Connection, NetworkRule, ProcessActivity};
 
 pub enum ActivityRow<'a> {
@@ -26,43 +26,40 @@ impl ActivityRow<'_> {
     }
 }
 impl App {
+    pub fn activity_expanded(&self, process: &ProcessActivity) -> bool {
+        self.expanded.contains(&process_key(process))
+            || ActivityQuery::parse(&self.filters[0])
+                .is_ok_and(|query| query.needs_peer() || !query.plain_process_matches(process))
+    }
     pub fn activity_rows(&self) -> Vec<ActivityRow<'_>> {
-        let filter = self.filters[0].to_lowercase();
+        let Ok(query) = ActivityQuery::parse(&self.filters[0]) else {
+            return Vec::new();
+        };
+        let permissions = query
+            .needs_incoming()
+            .then(|| crate::permissions::Index::new(&self.snapshot));
+        let mut processes: Vec<_> = self.snapshot.activity.iter().collect();
+        processes.sort_by(|a, b| self.activity_sort.compare(a, b));
         let mut result = Vec::new();
-        for process in &self.snapshot.activity {
-            let matches_process = format!(
-                "{} {} {}",
-                process.name,
-                process.pid,
-                process.path.as_deref().unwrap_or("")
-            )
-            .to_lowercase()
-            .contains(&filter);
+        for process in processes {
+            let incoming = permissions
+                .as_ref()
+                .map(|index| index.activity(process).state)
+                .unwrap_or(crate::permissions::IncomingState::Unknown);
+            if !query.process_matches(process, incoming) {
+                continue;
+            }
+            let matches_process = !query.needs_peer() && query.plain_process_matches(process);
             let matching: Vec<_> = process
                 .connections
                 .iter()
-                .filter(|flow| {
-                    format!(
-                        "{} {} {}",
-                        flow.remote_ip,
-                        flow.remote_port.unwrap_or(0),
-                        flow.country
-                            .as_ref()
-                            .map(|c| format!("{} {}", c.code, c.name))
-                            .unwrap_or_else(|| if flow.local {
-                                "Local network".into()
-                            } else {
-                                "Unknown".into()
-                            })
-                    )
-                    .to_lowercase()
-                    .contains(&filter)
-                })
+                .filter(|flow| query.flow_matches(process, flow))
                 .collect();
             if matches_process || !matching.is_empty() {
                 result.push(ActivityRow::Process(process));
                 if self.expanded.contains(&process_key(process))
-                    || (!filter.is_empty() && !matches_process)
+                    || query.needs_peer()
+                    || !matches_process
                 {
                     for flow in matching {
                         result.push(ActivityRow::Connection(process, flow));
@@ -71,6 +68,10 @@ impl App {
             }
         }
         result
+    }
+    /// Invalid typed filters are explicit and never silently fall back to free text.
+    pub fn activity_filter_error(&self) -> Option<String> {
+        ActivityQuery::parse(&self.filters[0]).err()
     }
     pub fn applications(&self) -> Vec<&Application> {
         let filter = self.filters[1].to_lowercase();

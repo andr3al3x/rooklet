@@ -1,4 +1,5 @@
 //! Modal help, inspectors, editors, and mutation confirmations.
+mod rules;
 use super::{HitMap, activity::country, mouse::shortcuts, theme::Palette};
 use crate::app::{ActivityRow, App, ConfirmedAction, MouseAction, Popup};
 use crate::presentation::{bytes, clean};
@@ -30,13 +31,17 @@ pub(super) fn draw(
     hits: &mut HitMap,
 ) {
     let (title, height) = match popup {
-        Popup::Help => ("KEYBOARD & MOUSE", 22),
+        Popup::Help => ("KEYBOARD & MOUSE", 24),
         Popup::Inspect(_) => ("CONNECTION", 16),
         Popup::Confirm { title, action, .. } => (
             title.as_str(),
             if matches!(action, ConfirmedAction::Terminate(_)) {
                 16
             } else if matches!(action, ConfirmedAction::Firewall(crate::model::Mutation::Applications { paths, .. }) if paths.len() > 1)
+                || matches!(
+                    action,
+                    ConfirmedAction::Firewall(crate::model::Mutation::NetworkRules(_))
+                )
             {
                 20
             } else {
@@ -45,6 +50,7 @@ pub(super) fn draw(
         ),
         Popup::Application { .. } => ("ADD APPLICATION", 10),
         Popup::Network { .. } => ("MACHINE-WIDE NETWORK RULE", 19),
+        Popup::Explain { .. } => ("EXPLAIN XIELD RULES · PREDICTION ONLY", 23),
     };
     let rect = centered(area, 76, height);
     frame.render_widget(Clear, rect);
@@ -87,9 +93,14 @@ pub(super) fn draw(
             ("[Enter Review]", KeyCode::Enter),
             ("[Esc Cancel]", KeyCode::Esc),
         ],
-        Popup::Help | Popup::Inspect(_) => &[("[Esc Close]", KeyCode::Esc)],
+        Popup::Help | Popup::Inspect(_) | Popup::Explain { .. } => &[("[Esc Close]", KeyCode::Esc)],
     };
     let mut choices = choices.to_vec();
+    if let Popup::Explain { draft, field } = popup {
+        rules::explain(frame, app, draft, *field, content, p, hits);
+        shortcuts(frame, buttons, &choices, p, hits);
+        return;
+    }
     if matches!(popup, Popup::Network { .. }) {
         for index in 0..7.min(content.height as usize) {
             hits.click(
@@ -104,10 +115,11 @@ pub(super) fn draw(
             "↑↓ / j k      Move selection".into(),
             "Enter         Expand, inspect, edit, or toggle".into(),
             "/             Search current view".into(),
+            "Activity /    app: country: proto: incoming: scope: ip: port:".into(),
+            "s / w         Sort Activity / explain Network rule matching".into(),
             "a / b         Allow / block INCOMING app connections".into(),
             "n             Add app path or machine-wide network rule".into(),
-            "d / t         Delete / toggle network rule".into(),
-            "+ / -         Raise / lower network rule precedence".into(),
+            "d / t / + -   Delete / toggle / reorder network rule".into(),
             "Space         Freeze activity display".into(),
             "x / X         Terminate / force kill Activity app + helpers".into(),
             "Esc           Cancel dialog or clear search".into(),
@@ -115,7 +127,6 @@ pub(super) fn draw(
             "g in Settings Update the offline country database".into(),
             "q / Ctrl-C    Quit; applied firewall rules remain".into(),
             "Click selects · double-click opens · wheel moves".into(),
-            "Click fields to focus; click choices to cycle".into(),
         ],
         Popup::Confirm { body, .. } => body.lines().map(str::to_owned).collect::<Vec<_>>(),
         Popup::Application { path } => vec![
@@ -165,7 +176,7 @@ pub(super) fn draw(
                 "".into(),
                 "Tab / ↑↓ field · ←→ / Space changes choice".into(),
                 "Type edits text · Enter reviews · Esc cancels".into(),
-                "".into(),
+                "Direction is proposed policy, not observed direction.".into(),
                 "Applies to every app. Port is local for inbound traffic.".into(),
             ]);
             lines
@@ -201,6 +212,7 @@ pub(super) fn draw(
                 ]
             }
         }
+        Popup::Explain { .. } => unreachable!("explanation is rendered above"),
     };
     let text = lines
         .into_iter()
@@ -210,6 +222,10 @@ pub(super) fn draw(
                 && index == *field
             {
                 Line::styled(text, Style::default().fg(p.accent).bg(p.selection))
+            } else if matches!(popup, Popup::Confirm { .. })
+                && (text.starts_with("Shadow warnings") || text.contains(" is fully shadowed by "))
+            {
+                Line::styled(text, Style::default().fg(p.warn))
             } else {
                 Line::raw(text)
             }

@@ -1,15 +1,19 @@
 //! Application state and the public interaction API.
+mod activity_query;
 mod dialog;
 mod editor;
 mod input;
 mod mouse;
 mod permissions;
+mod rules;
 mod selection;
 mod termination;
 
 pub use crate::presentation::{bytes, clean, countries};
+pub use activity_query::ActivitySort;
 pub use dialog::{ConfirmedAction, NetworkDraft, Popup};
 pub use mouse::MouseAction;
+pub use rules::RuleProbe;
 pub use selection::{ActivityRow, process_key};
 
 use crate::model::{Mutation, ProcessActivity, Setting, Snapshot};
@@ -80,6 +84,7 @@ pub struct App {
     pub paused: bool,
     pub searching: bool,
     pub filters: [String; 4],
+    pub activity_sort: ActivitySort,
     pub selection: [Option<String>; 4],
     pub expanded: HashSet<String>,
     pub chart: VecDeque<(u64, u64)>,
@@ -99,6 +104,7 @@ impl App {
             paused: false,
             searching: false,
             filters: Default::default(),
+            activity_sort: Default::default(),
             selection: Default::default(),
             expanded: HashSet::new(),
             chart: VecDeque::new(),

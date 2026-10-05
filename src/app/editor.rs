@@ -77,16 +77,31 @@ impl App {
                         } else {
                             rules.push(rule);
                         }
-                        self.confirm(
-                            "Apply network rule",
-                            concat!("This rule applies to ALL applications on this Mac.\n\n",
-                                "Apply the ordered network rules? Existing connections may continue through PF state.").into(),
-                            Mutation::NetworkRules(rules),
-                        );
+                        self.review_network_rules(rules);
                         return Effect::default();
                     }
                     Err(error) => self.notify(error.to_string(), true),
                 },
+                _ => {}
+            },
+            Popup::Explain { draft, field } => match key.code {
+                KeyCode::Enter => return Effect::default(),
+                KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % 5,
+                KeyCode::BackTab | KeyCode::Up => *field = (*field + 4) % 5,
+                KeyCode::Left | KeyCode::Right => draft.cycle(*field),
+                KeyCode::Char(' ') if draft.text_mut(*field).is_none() => draft.cycle(*field),
+                KeyCode::Backspace => {
+                    if let Some(text) = draft.text_mut(*field) {
+                        text.pop();
+                    }
+                }
+                KeyCode::Char(c) if !c.is_control() => {
+                    if let Some(text) = draft.text_mut(*field)
+                        && text.len() < 256
+                    {
+                        text.push(c);
+                    }
+                }
                 _ => {}
             },
             _ => {}

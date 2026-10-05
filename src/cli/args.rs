@@ -83,6 +83,27 @@ pub(super) enum Switch {
 #[derive(Subcommand)]
 pub(super) enum NetworkCommand {
     Status,
+    /// Validate saved or supplied rules and report complete single-rule shadowing. Read-only.
+    Check(InputRules),
+    /// Predict matching within Xield's anchor for a hypothetical connection. No live verdict.
+    Explain {
+        #[command(flatten)]
+        input: InputRules,
+        #[arg(long)]
+        remote: std::net::IpAddr,
+        /// Hypothetical connection protocol: tcp or udp.
+        #[arg(long, default_value = "tcp", value_parser = query_protocol)]
+        protocol: Protocol,
+        /// Hypothetical connection direction: in or out.
+        #[arg(long, default_value = "out", value_parser = query_direction)]
+        direction: Direction,
+        /// Destination service port; omission means unknown (local for in, remote for out).
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+        port: Option<u16>,
+        /// Interface name; omission means unknown, not any interface.
+        #[arg(long)]
+        interface: Option<String>,
+    },
     /// Install a dedicated PF anchor in a supported configuration; preserves existing rules.
     Setup(InputRules),
     /// Validate and replace only Xield's network rules.
@@ -108,11 +129,25 @@ pub(super) enum NetworkCommand {
 }
 #[derive(Args)]
 pub(super) struct InputRules {
-    /// JSON array of network rules. Omit on setup for an empty initial ruleset.
+    /// JSON rule array. Setup may omit it; check/explain use saved rules when omitted.
     pub(super) path: Option<PathBuf>,
     /// Read the JSON rule array from stdin.
     #[arg(long, conflicts_with = "path")]
     pub(super) stdin: bool,
+}
+fn query_protocol(value: &str) -> Result<Protocol, String> {
+    match value {
+        "tcp" => Ok(Protocol::Tcp),
+        "udp" => Ok(Protocol::Udp),
+        _ => Err("use tcp or udp for a hypothetical connection".into()),
+    }
+}
+fn query_direction(value: &str) -> Result<Direction, String> {
+    match value {
+        "in" => Ok(Direction::Inbound),
+        "out" => Ok(Direction::Outbound),
+        _ => Err("use in or out for a hypothetical connection".into()),
+    }
 }
 #[derive(Args)]
 pub(super) struct NetworkArgs {

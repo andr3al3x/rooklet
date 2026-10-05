@@ -25,6 +25,10 @@ pub enum Popup {
         draft: NetworkDraft,
         field: usize,
     },
+    Explain {
+        draft: super::RuleProbe,
+        field: usize,
+    },
 }
 #[derive(Debug, Clone)]
 pub struct NetworkDraft {
@@ -39,6 +43,20 @@ pub struct NetworkDraft {
     pub interface: String,
 }
 impl NetworkDraft {
+    pub(super) fn from_peer(flow: &crate::model::Connection) -> Self {
+        let mut draft = Self::new(flow.remote_ip.clone());
+        draft.name = format!("Peer {}", flow.remote_ip);
+        draft.protocol = flow.protocol;
+        if flow.protocol != Protocol::Any {
+            draft.port = flow
+                .remote_port
+                .map(|port| port.to_string())
+                .unwrap_or_default();
+        }
+        // Direction is a proposed policy, not inferred from observed traffic.
+        draft.direction = Direction::Outbound;
+        draft
+    }
     pub(super) fn new(destination: String) -> Self {
         let serial = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

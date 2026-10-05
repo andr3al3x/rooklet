@@ -42,6 +42,8 @@ Rules are strict JSON arrays, for example:
 
 ```sh
 xield network preview rules.json
+xield network check rules.json
+xield network explain rules.json --remote 203.0.113.5 --protocol tcp --direction out --port 443 --interface en0
 xield network apply rules.json
 xield network toggle example
 xield network move example -1
@@ -53,6 +55,22 @@ Direction is `in`, `out`, or `both`. Destination is a remote peer; the port is t
 destination service port (local inbound, remote outbound). `any` destination
 expands to IPv4 and IPv6 rules. CIDRs are canonicalized. Names are display metadata
 and never interpolated into PF source. Rule IDs and interfaces have strict syntax.
+
+`check` reports enabled rules completely covered by one earlier enabled rule;
+partial overlaps and coverage by a combination of rules are not diagnosed.
+Warnings are also included in TUI mutation reviews and emitted on stderr before
+CLI network changes and profile application. Warnings do not invalidate a ruleset.
+
+`explain` evaluates a hypothetical TCP/UDP connection against saved or supplied
+ordered rules. It predicts only Xield's anchor matching, not a live firewall
+verdict. Missing destination ports and interfaces remain unknown: a possible
+earlier match prevents claiming that a later rule wins. The destination port
+is local for inbound queries and remote for outbound queries. No match does not
+imply allow; other anchors and established states still affect traffic.
+
+Both commands use saved rules when no file/`--stdin` is supplied, which may require
+prior `sudo -v`. Supplied rule arrays are analyzed without system access or
+privileges. In the TUI, press `w` in Network to edit a hypothetical connection.
 
 ## Ownership, state, and shutdown
 

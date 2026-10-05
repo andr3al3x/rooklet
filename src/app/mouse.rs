@@ -45,6 +45,12 @@ impl App {
                         draft.cycle(index);
                     }
                 }
+                if let Some(Popup::Explain { draft, field }) = &mut self.popup
+                    && index < 5
+                {
+                    *field = index;
+                    draft.cycle(index);
+                }
             }
             MouseAction::View(view) if self.popup.is_none() => {
                 self.last_mouse_click = None;

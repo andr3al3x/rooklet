@@ -44,12 +44,7 @@ pub fn validate_rules(rules: &[NetworkRule]) -> Result<()> {
         }
         if let Some(interface) = &rule.interface {
             ensure!(
-                !interface.is_empty()
-                    && interface.len() < libc::IFNAMSIZ
-                    && interface
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || c == b'_')
-                    && interface.as_bytes()[0].is_ascii_alphabetic(),
+                valid_interface(interface),
                 "Rule {}: invalid interface name",
                 rule.id
             );
@@ -57,7 +52,15 @@ pub fn validate_rules(rules: &[NetworkRule]) -> Result<()> {
     }
     Ok(())
 }
-fn destination(value: &str) -> Result<Option<IpNet>> {
+pub(super) fn valid_interface(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() < libc::IFNAMSIZ
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        && value.as_bytes()[0].is_ascii_alphabetic()
+}
+pub(super) fn destination(value: &str) -> Result<Option<IpNet>> {
     if value == "any" {
         return Ok(None);
     }

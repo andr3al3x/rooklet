@@ -9,7 +9,7 @@ use xield::{
     network,
 };
 
-fn network_status(demo: bool) -> Result<NetworkStatus> {
+pub(super) fn network_status(demo: bool) -> Result<NetworkStatus> {
     if demo {
         return Ok(Backend::new(true)?.snapshot()?.network);
     }
@@ -76,12 +76,34 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
     let setup = matches!(&command, NetworkCommand::Setup(_));
     match command {
         NetworkCommand::Status => return print_json(&network_status(demo)?),
+        NetworkCommand::Check(input) => return super::network_analysis::check(&input, demo),
+        NetworkCommand::Explain {
+            input,
+            remote,
+            protocol,
+            direction,
+            port,
+            interface,
+        } => {
+            return super::network_analysis::explain(
+                &input,
+                demo,
+                network::RuleQuery {
+                    remote_ip: remote,
+                    protocol,
+                    direction,
+                    destination_port: port,
+                    interface,
+                },
+            );
+        }
         NetworkCommand::Preview(input) => {
             print!("{}", network::render_rules(&input_rules(&input, false)?)?);
             return Ok(());
         }
         NetworkCommand::Setup(input) | NetworkCommand::Apply(input) => {
             let rules = input_rules(&input, setup)?;
+            super::network_analysis::warn(&rules)?;
             if demo {
                 let mut backend = Backend::new(true)?;
                 backend.mutate(Mutation::NetworkRules(rules))?;
@@ -177,6 +199,7 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
                 _ => unreachable!(),
             }
             network::validate_rules(&rules)?;
+            super::network_analysis::warn(&rules)?;
             if demo {
                 let mut backend = Backend::new(true)?;
                 backend.mutate(Mutation::NetworkRules(rules))?;

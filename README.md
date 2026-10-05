@@ -97,7 +97,7 @@ made with `cargo install`, use `cargo uninstall xield` instead.
 | Network | Add, edit, reorder, and toggle IP/CIDR, port, protocol, direction, and interface rules | PF rules for every application on the Mac |
 | Settings | Turn the incoming firewall on/off; manage stealth, block-all, signed-app defaults, and country data | macOS application firewall and local GeoIP database |
 
-Xield also provides JSON status, configuration profiles, rule previews, and
+Xield also provides JSON status, configuration profiles, rule previews/explanations, and
 light/monochrome themes:
 
 ```sh
@@ -175,6 +175,27 @@ Rules match a remote peer: source IP for incoming traffic, destination IP for
 outgoing traffic. The port is the destination service port: local for incoming,
 remote for outgoing. The first matching enabled rule inside Xield's anchor wins.
 
+Press `w` in Network to explore a hypothetical connection. Enter its remote IP,
+TCP/UDP protocol, inbound/outbound direction, destination service port, and
+interface. Results update while you edit. A blank port or interface stays unknown;
+if an earlier rule might depend on that field, Xield reports an undetermined
+result instead of claiming a later rule wins. This predicts matching inside
+Xield's anchor, not effective enforcement across other anchors or existing states.
+
+Read-only CLI diagnostics use saved rules by default, or a JSON rule array supplied
+as a file or with `--stdin`:
+
+```sh
+xield network check rules.json
+xield network explain rules.json --remote 203.0.113.5 --protocol tcp --direction out --port 443 --interface en0
+```
+
+Reading saved rules may require prior `sudo -v`; supplied files need no privileges.
+Checks report rules fully shadowed by a single earlier enabled rule. TUI reviews
+show these warnings before applying additions, edits, toggles, deletions, or
+reordering; CLI changes and profile checks/apply emit warnings on stderr.
+Partial overlap and coverage by multiple earlier rules are not diagnosed.
+
 Xield preserves other anchors and existing connection states. Established
 connections may therefore continue after a rule changes. To clear Xield's rules
 and release its PF enable reference, or remove the setup:
@@ -219,6 +240,34 @@ received/sent totals without selecting an app. Expand an app to see its peers;
 `Enter` on a peer opens the full endpoint. Wider windows add incoming permissions
 and application paths.
 
+Press `s` or click the Activity table's **Sort** title to cycle observed order,
+download/upload rates, received/sent totals, app name, and peer count. Numeric
+sorts put the largest values first; selection follows the same app or peer
+as the list moves.
+
+Activity search accepts ordinary text and structured filters joined with AND:
+
+| Filter | Meaning |
+| --- | --- |
+| `app:Safari` | App name or path contains the text |
+| `country:US`, `country:"United States"` | Country code or full name; also `local` / `unknown` |
+| `proto:tcp`, `proto:udp`, `proto:any` | Protocol of an observed peer |
+| `incoming:allow` | Registered incoming state: `allow`, `block`, `mixed`, `unregistered`, `unavailable` |
+| `scope:local`, `scope:public` | Local/private or public observed address |
+| `ip:203.0.113.0/24` | Remote IPv4/IPv6 address or CIDR |
+| `port:443` | Observed remote port |
+
+For example, `app:Safari country:US proto:tcp port:443` shows matching peers and
+their parent apps, automatically expanding the matching peers. All peer filters
+must match the same peer. Parent totals still represent the entire app. Invalid
+filter fields or values show an error.
+
+Select an expanded peer and press `n` to draft a machine-wide rule with its IP,
+observed protocol, and known remote port. The initial direction is an **outbound
+proposal**, because observations do not identify connection direction. Review
+the editable fields and confirmation before applying; inbound rules use the
+local service port. The rule affects every app, not just the selected app.
+
 Rates use elapsed time between samples. Totals start at the first observation
 and preserve contributions across helper exits. Process totals are authoritative;
 child-flow totals are not added again. Peer counts represent observed
@@ -234,7 +283,9 @@ Helpers are grouped by verified app paths; unresolved processes stay separate.
 | `↑↓`, `j` / `k` | Move selection |
 | `Enter` | Expand peers, inspect a peer, edit a network rule, or review a setting |
 | `a` / `b` | Review incoming allow/block permissions |
-| `n` | Add an app in Applications or a network rule in Activity/Network |
+| `n` | Add an app, draft a rule from a selected Activity peer, or add a Network rule |
+| `s` in Activity | Cycle sorting; click the table's Sort title for the same action |
+| `w` in Network | Explain a hypothetical connection against saved Xield rules |
 | `d` | Remove a registered app entry or network rule |
 | `t`, `+` / `-` | Toggle or reorder a network rule |
 | `/`, `Esc` | Search; clear search or cancel a dialog |
@@ -248,7 +299,7 @@ Click tabs, rows, footer shortcuts, and dialog buttons. Double-click a row to
 expand activity, inspect a peer, edit a rule, or review an app permission or
 setting. Click Activity's expand indicator once to expand/collapse. The mouse
 wheel moves selection over lists and scrolls confirmation text. In the network
-editor, click text fields to focus and choice fields to cycle values.
+editor and explanation dialog, click text fields to focus and choice fields to cycle values.
 
 Mouse navigation needs a terminal with mouse reporting. Capture is suspended
 during authentication and released when Xield exits.

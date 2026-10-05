@@ -1,7 +1,7 @@
 //! Full-width observed app metrics with expandable peer details.
 mod format;
 use super::{HitMap, theme::Palette};
-use crate::app::{ActivityRow, App, View, process_key};
+use crate::app::{ActivityRow, App, View};
 use crate::model::{Connection, ProcessActivity};
 use crate::presentation::clean;
 use ratatui::{
@@ -78,7 +78,17 @@ pub(super) fn draw(
     hits: &mut HitMap,
     state: &mut TableState,
 ) {
-    let mut block = p.block("OBSERVED TRAFFIC");
+    let title = format!("OBSERVED TRAFFIC · Sort: {}", app.activity_sort.label());
+    let mut block = p.block(title.clone());
+    hits.click(
+        Rect::new(
+            area.x + 1,
+            area.y,
+            (Line::raw(title).width() as u16 + 2).min(area.width.saturating_sub(2)),
+            1,
+        ),
+        crate::app::MouseAction::Key(crossterm::event::KeyCode::Char('s')),
+    );
     let legend = if area.width >= 110 {
         " Totals since monitoring started · Peers / protocol · Incoming = registered app entries "
     } else if area.width >= 76 {
@@ -89,7 +99,10 @@ pub(super) fn draw(
     block = block.title_bottom(Line::from(legend).style(p.muted()));
     let rows = app.activity_rows();
     if rows.is_empty() {
-        let reason = if !app.filter().is_empty() {
+        let error = app.activity_filter_error();
+        let reason = if let Some(error) = &error {
+            error.as_str()
+        } else if !app.filter().is_empty() {
             "No apps or peers match this search."
         } else {
             app.snapshot
@@ -175,7 +188,7 @@ fn process_cell(
     let text = match column {
         Column::Application => format!(
             "{} {}",
-            if app.expanded.contains(&process_key(process)) {
+            if app.activity_expanded(process) {
                 "▾"
             } else {
                 "▸"

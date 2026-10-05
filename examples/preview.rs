@@ -29,6 +29,43 @@ fn main() -> Result<()> {
         app.update(backend.snapshot()?, false);
     }
     match name.as_str() {
+        "sorted" => {
+            app.handle(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+        }
+        "filtered" => {
+            app.filters[0] = "country:US proto:tcp".into();
+        }
+        "peer-rule" | "rule-review" => {
+            app.snapshot.network.rules = vec![xield::model::NetworkRule {
+                id: "allow-tcp".into(),
+                name: "Allow TCP".into(),
+                destination: "any".into(),
+                port: None,
+                protocol: xield::model::Protocol::Tcp,
+                direction: xield::model::Direction::Outbound,
+                action: xield::model::Action::Allow,
+                interface: None,
+                enabled: true,
+            }];
+            app.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            app.handle(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+            app.handle(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+            if let Some(Popup::Network { draft, .. }) = &mut app.popup {
+                draft.id = "selected-peer".into();
+            }
+            if name == "rule-review" {
+                app.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            }
+        }
+        "explain" => {
+            app.view = View::Network;
+            app.handle(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+            if let Some(Popup::Explain { draft, .. }) = &mut app.popup {
+                draft.remote = "203.0.113.5".into();
+                draft.port = "443".into();
+                draft.interface = "en0".into();
+            }
+        }
         "network" => app.view = View::Network,
         "settings" => app.view = View::Settings,
         "applications" => app.view = View::Applications,

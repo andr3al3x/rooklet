@@ -40,6 +40,23 @@ impl App {
             return Effect::default();
         }
         match key.code {
+            KeyCode::Char('w') if !self.busy && self.view == View::Network => {
+                if self.snapshot.network.rules_available {
+                    self.popup = Some(Popup::Explain {
+                        draft: super::RuleProbe::default(),
+                        field: 0,
+                    });
+                } else {
+                    self.notify(
+                        "Saved rules are unavailable. Press u to authenticate and refresh.".into(),
+                        true,
+                    );
+                }
+            }
+            KeyCode::Char('s') if self.view == View::Activity => {
+                self.activity_sort = self.activity_sort.next();
+                self.reconcile();
+            }
             KeyCode::Char(c @ ('x' | 'X')) if !self.busy && self.view == View::Activity => {
                 self.termination_action(if c == 'x' {
                     crate::process::TerminationMode::Terminate
@@ -121,27 +138,30 @@ impl App {
             KeyCode::Char('n')
                 if !self.busy && matches!(self.view, View::Activity | View::Network) =>
             {
-                if !self.snapshot.network.configured {
+                if !self.snapshot.network.rules_available {
+                    self.notify(
+                        "Saved rules are unavailable. Press u to authenticate and refresh.".into(),
+                        true,
+                    );
+                } else if !self.snapshot.network.configured {
                     self.notify("Set up PF first: sudo xield network setup".into(), true);
                 } else {
-                    let destination = if self.view == View::Activity {
-                        self.activity_rows()
-                            .get(self.selected_index().unwrap_or(0))
-                            .and_then(|row| {
-                                if let ActivityRow::Connection(_, flow) = row {
-                                    Some(flow.remote_ip.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_default()
+                    let draft = if self.view == View::Activity {
+                        let rows = self.activity_rows();
+                        let Some(ActivityRow::Connection(_, flow)) =
+                            self.selected_index().and_then(|index| rows.get(index))
+                        else {
+                            self.notify(
+                                "Expand an app and select a peer to create a rule draft.".into(),
+                                false,
+                            );
+                            return Effect::default();
+                        };
+                        NetworkDraft::from_peer(flow)
                     } else {
-                        String::new()
+                        NetworkDraft::new(String::new())
                     };
-                    self.popup = Some(Popup::Network {
-                        draft: NetworkDraft::new(destination),
-                        field: 0,
-                    });
+                    self.popup = Some(Popup::Network { draft, field: 0 });
                 }
             }
             KeyCode::Char('e') | KeyCode::Enter if !self.busy && self.view == View::Network => {
@@ -169,11 +189,7 @@ impl App {
                             }
                             _ => return Effect::default(),
                         }
-                        self.confirm(
-                            "Apply network rules",
-                            "Apply the updated machine-wide network rules? Existing connections may continue through PF state.".into(),
-                            Mutation::NetworkRules(rules),
-                        );
+                        self.review_network_rules(rules);
                     }
                 }
             }

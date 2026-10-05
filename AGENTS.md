@@ -46,6 +46,7 @@ compatibility layers, legacy CLI aliases, or old-schema migrations.
 - `src/geoip.rs` and `src/geoip/`: offline lookup, bounded country cache, and explicit managed database updates.
 - `src/network.rs` and `src/network/`: PF facade, pure compiler/configuration checks,
   trusted persistence, subprocess adapter, and lifecycle transactions.
+- `src/network/analysis.rs`: pure hypothetical rule matching and conservative single-rule shadowing.
 - `tests/`: behavior and regression checks; fixtures must retain their provenance and licenses.
 - `examples/preview.rs` and `scripts/render-preview.py`: actual terminal-cell visual previews.
 - `scripts/build-release.sh` and `scripts/package.sh`: explicit macOS target builds and verified archives.

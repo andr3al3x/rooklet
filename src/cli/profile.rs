@@ -48,6 +48,7 @@ pub(super) fn run(backend: &mut Backend, command: ProfileCommand) -> Result<()> 
         }
         ProfileCommand::Check { path } => {
             let profile = read_profile(&path)?;
+            super::network_analysis::warn(&profile.network_rules)?;
             print_json(&profile)?;
         }
         ProfileCommand::Apply { path, yes } => {
@@ -56,6 +57,7 @@ pub(super) fn run(backend: &mut Backend, command: ProfileCommand) -> Result<()> 
                 yes,
                 "review with `xield profile check PATH`, then pass --yes to replace all profile scopes"
             );
+            super::network_analysis::warn(&profile.network_rules)?;
             let current = backend.snapshot()?;
             ensure!(
                 current.applications_available,

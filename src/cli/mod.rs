@@ -4,6 +4,7 @@ mod args;
 mod config;
 mod geoip;
 mod network;
+mod network_analysis;
 mod profile;
 
 use crate::{auth::authenticate, json::print_json};

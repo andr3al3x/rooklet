@@ -14,6 +14,7 @@ fn choices(view: View) -> &'static [Choice] {
             ("[a Allow]", KeyCode::Char('a')),
             ("[b Block]", KeyCode::Char('b')),
             ("[n IP rule]", KeyCode::Char('n')),
+            ("[s Sort]", KeyCode::Char('s')),
             ("[Space Freeze]", KeyCode::Char(' ')),
             ("[x Terminate]", KeyCode::Char('x')),
             ("[X Force kill]", KeyCode::Char('X')),
@@ -31,6 +32,7 @@ fn choices(view: View) -> &'static [Choice] {
             ("[d Delete]", KeyCode::Char('d')),
             ("[+ Up]", KeyCode::Char('+')),
             ("[- Down]", KeyCode::Char('-')),
+            ("[w Explain]", KeyCode::Char('w')),
         ],
         View::Settings => &[
             ("[Enter Toggle]", KeyCode::Enter),
@@ -88,6 +90,11 @@ pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &
         p,
         hits,
     );
+    let filter_error = if app.view == View::Activity {
+        app.activity_filter_error()
+    } else {
+        None
+    };
     let (last, color) = if let Some(notice) = &app.notice
         && notice.at.elapsed().as_secs() < 8
     {
@@ -95,6 +102,8 @@ pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &
             notice.text.clone(),
             if notice.error { p.bad } else { p.good },
         )
+    } else if let Some(error) = filter_error {
+        (error, p.bad)
     } else if app.snapshot.demo {
         ("SIMULATED ACTIVITY · no settings changed".into(), p.warn)
     } else {
