@@ -5,6 +5,7 @@ mod editor;
 mod input;
 mod mouse;
 mod permissions;
+mod profiles;
 mod rules;
 mod selection;
 mod termination;
@@ -13,6 +14,7 @@ pub use crate::presentation::{bytes, clean, countries};
 pub use activity_query::ActivitySort;
 pub use dialog::{ConfirmedAction, NetworkDraft, Popup};
 pub use mouse::MouseAction;
+pub use profiles::{ProfileOperation, ProfileOutcome};
 pub use rules::RuleProbe;
 pub use selection::{ActivityRow, process_key};
 
@@ -70,6 +72,7 @@ pub struct Effect {
     pub authenticate: bool,
     pub update_geoip: bool,
     pub terminate: Option<crate::process::TerminationRequest>,
+    pub profile: Option<ProfileOperation>,
 }
 pub struct Notice {
     pub text: String,
@@ -92,6 +95,7 @@ pub struct App {
     live_activity: Vec<ProcessActivity>,
     updated_at: Instant,
     last_mouse_click: Option<(View, String, Instant)>,
+    pending_profile: Option<profiles::Pending>,
 }
 impl App {
     pub fn new(snapshot: Snapshot) -> Self {
@@ -111,6 +115,7 @@ impl App {
             notice: None,
             updated_at: Instant::now(),
             last_mouse_click: None,
+            pending_profile: None,
         };
         app.reconcile();
         app
@@ -132,21 +137,17 @@ impl App {
         self.updated_at = Instant::now();
         if mutation {
             self.busy = false;
-            self.notify(
-                if self.snapshot.demo {
-                    "Demo state updated"
-                } else {
-                    "Change verified against macOS"
-                }
-                .into(),
-                false,
-            );
+            self.notify("Change verified against macOS".into(), false);
         }
         self.reconcile();
     }
     pub fn failed(&mut self, text: String, mutation: bool) {
         if mutation {
             self.busy = false;
+            self.pending_profile = None;
+            if let Some(Popup::Profiles { loading, .. }) = &mut self.popup {
+                *loading = false;
+            }
         } else {
             self.snapshot.notices = vec![clean(&text)];
             self.snapshot.firewall = None;
@@ -157,12 +158,7 @@ impl App {
         self.update(snapshot, false);
         self.busy = false;
         self.notify(
-            if self.snapshot.demo {
-                "Demo country update simulated; no download or files changed"
-            } else {
-                "Country database updated; lookups remain offline"
-            }
-            .into(),
+            "Country database updated; lookups remain offline".into(),
             false,
         );
     }

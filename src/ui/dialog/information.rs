@@ -20,6 +20,7 @@ pub(super) fn help() -> Vec<String> {
         "x / X         Terminate / force kill Activity app + helpers".into(),
         "Esc           Cancel dialog or clear search".into(),
         "u             Authenticate for PF status and changes".into(),
+        "p             Profiles; Enter reviews, e exports current scopes".into(),
         "g in Settings Update the offline country database".into(),
         "q / Ctrl-C    Quit; applied firewall rules remain".into(),
         "Click selects · double-click opens · wheel moves".into(),

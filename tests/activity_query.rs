@@ -1,6 +1,7 @@
+mod common;
+
 use xield::{
     app::{ActivityRow, ActivitySort, App, process_key},
-    backend::Backend,
     model::{Application, Connection, Country, ProcessActivity, Protocol},
 };
 
@@ -32,7 +33,7 @@ fn process(pid: u32, name: &str, connections: Vec<Connection>) -> ProcessActivit
     }
 }
 fn app() -> App {
-    let mut snapshot = Backend::new(true).unwrap().snapshot().unwrap();
+    let mut snapshot = common::snapshot();
     snapshot.activity = vec![
         process(
             20,
@@ -219,7 +220,7 @@ fn sort_cycle_covers_metrics_and_descending_numeric_order() {
 
 #[test]
 fn incoming_filters_use_grouped_permission_resolution() {
-    let mut snapshot = Backend::new(true).unwrap().snapshot().unwrap();
+    let mut snapshot = common::snapshot();
     snapshot.activity.truncate(1);
     snapshot.activity[0].connections.clear();
     let identity = snapshot.activity[0].identities[0].clone();

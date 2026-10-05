@@ -9,16 +9,15 @@ use std::time::Duration;
 use terminal::TerminalSession;
 use worker::{Update, UpdateKind, Worker};
 use xield::{
-    app::App,
+    app::{App, ProfileOperation},
     model::Snapshot,
     ui::{self, Theme},
 };
 
-pub(crate) fn run(demo: bool, theme: Theme) -> Result<()> {
-    let mut worker = Worker::start(demo)?;
+pub(crate) fn run(theme: Theme) -> Result<()> {
+    let mut worker = Worker::start()?;
     let mut terminal = TerminalSession::start()?;
     let mut app = App::new(Snapshot {
-        demo,
         notices: vec!["Reading macOS firewall and traffic statistics…".into()],
         ..Default::default()
     });
@@ -67,15 +66,9 @@ pub(crate) fn run(demo: bool, theme: Theme) -> Result<()> {
                         }
                     }
                     if effect.authenticate {
-                        if demo {
-                            app.notify("Demo mode; no administrator access needed".into(), false);
-                        } else {
-                            match authenticate_in_terminal(&mut terminal)? {
-                                Ok(()) => {
-                                    app.notify("Administrator session authorized".into(), false)
-                                }
-                                Err(error) => app.notify(error.to_string(), true),
-                            }
+                        match authenticate_in_terminal(&mut terminal)? {
+                            Ok(()) => app.notify("Administrator session authorized".into(), false),
+                            Err(error) => app.notify(error.to_string(), true),
                         }
                     }
                     if let Some(request) = effect.terminate {
@@ -84,13 +77,18 @@ pub(crate) fn run(demo: bool, theme: Theme) -> Result<()> {
                     if effect.update_geoip {
                         worker.update_geoip()?;
                     }
-                    if let Some(mutation) = effect.mutation {
-                        let authorized = if demo {
-                            Ok(())
+                    if let Some(operation) = effect.profile {
+                        if matches!(operation, ProfileOperation::Apply(_)) {
+                            match authenticate_in_terminal(&mut terminal)? {
+                                Ok(()) => worker.profile(operation)?,
+                                Err(error) => app.failed(error.to_string(), true),
+                            }
                         } else {
-                            authenticate_in_terminal(&mut terminal)?
-                        };
-                        match authorized {
+                            worker.profile(operation)?;
+                        }
+                    }
+                    if let Some(mutation) = effect.mutation {
+                        match authenticate_in_terminal(&mut terminal)? {
                             Ok(()) => worker.submit(mutation)?,
                             Err(error) => app.failed(error.to_string(), true),
                         }
@@ -116,6 +114,30 @@ fn authenticate_in_terminal(terminal: &mut TerminalSession) -> Result<Result<()>
 }
 
 fn apply_update(app: &mut App, update: Update, closing: bool) -> Result<()> {
+    if let Some(outcome) = update.profile {
+        match update.result {
+            Ok(snapshot) => app.profiles_finished(snapshot, outcome),
+            Err(error) => {
+                app.profiles_finished(app.snapshot.clone(), outcome);
+                let summary = app
+                    .notice
+                    .as_ref()
+                    .map(|notice| notice.text.clone())
+                    .unwrap_or_default();
+                app.failed(
+                    format!("{summary}; status refresh failed: {error:#}"),
+                    false,
+                );
+            }
+        }
+        if closing
+            && let Some(notice) = &app.notice
+            && notice.error
+        {
+            anyhow::bail!("{}", notice.text);
+        }
+        return Ok(());
+    }
     if let Some(report) = update.termination {
         match update.result {
             Ok(snapshot) => app.termination_finished(snapshot, &report),

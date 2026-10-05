@@ -50,6 +50,11 @@ xield network move example -1
 xield network delete example
 ```
 
+`xield network preflight rules.json` validates the proposed rules against the
+host's interfaces, trusted managed files, live parent layout, PF syntax, and saved
+state size. It needs administrator authentication but changes no firewall state.
+Profile application uses this check before changing incoming permissions.
+
 A port requires TCP or UDP. `any` protocol without a port covers all IP protocols.
 Direction is `in`, `out`, or `both`. Destination is a remote peer; the port is the
 destination service port (local inbound, remote outbound). `any` destination

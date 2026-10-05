@@ -44,7 +44,7 @@ fn cli(args: &[&str], data: &[u8]) -> std::process::Output {
 }
 
 #[test]
-fn supplied_rules_check_without_demo_or_system_access_and_report_shadowing() {
+fn supplied_rules_check_without_system_access_and_report_shadowing() {
     let data = serde_json::to_vec(&rules()).unwrap();
     let output = cli(&["network", "check", "--stdin"], &data);
     assert!(
@@ -116,19 +116,32 @@ fn diagnostics_reject_bad_rules_and_non_concrete_queries() {
     for data in [b"{}".as_slice(), b"[{}]".as_slice(), b"garbage".as_slice()] {
         assert!(!cli(&["network", "check", "--stdin"], data).status.success());
     }
-    assert!(cli(&["--demo", "network", "check"], b"").status.success());
 }
 
 #[test]
-fn demo_apply_warns_before_output_but_does_not_reject_valid_shadowed_rules() {
-    let output = cli(
-        &["--demo", "network", "apply", "--stdin"],
-        &serde_json::to_vec(&rules()).unwrap(),
-    );
+fn supplied_profile_check_warns_without_rejecting_valid_shadowed_rules() {
+    let profile = json!({
+        "format": "xield-profile", "version": 1,
+        "firewall": {"enabled": true, "stealth": false, "block_all": false,
+                     "allow_signed": true, "allow_signed_app": true},
+        "applications": [], "network_rules": rules()
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("profile.json");
+    let before = serde_json::to_vec(&profile).unwrap();
+    std::fs::write(&path, &before).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_xield"))
+        .args(["profile", "check"])
+        .arg(&path)
+        .output()
+        .unwrap();
     assert!(output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("second is fully shadowed by #1 first")
     );
-    let status: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(status["rules"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        profile
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
 }

@@ -24,7 +24,7 @@ pub(super) fn set_applications(
     action: Action,
     runner: &mut impl Runner,
 ) -> Result<()> {
-    validate_application_targets(paths, true)?;
+    validate_application_targets(paths)?;
     let initial = applications(runner)?;
     for path in paths {
         ensure!(

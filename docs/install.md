@@ -14,7 +14,6 @@ cd xield-0.2.0-macos-arm64
 sh install.sh
 export PATH="$HOME/.local/bin:$PATH"
 xield --version
-xield --demo
 ```
 
 The installer copies the binary to `~/.local/bin/xield`. Add that directory to
@@ -35,8 +34,7 @@ The installer preserves quarantine attributes.
 
 ## Run
 
-Start with `xield --demo` to explore simulated activity without system changes.
-For your Mac's actual state, run as your normal user:
+Run as your normal user:
 
 ```sh
 xield doctor

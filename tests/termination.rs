@@ -1,8 +1,9 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
 use xield::{
     app::{App, ConfirmedAction, Effect, Popup, View},
-    backend::Backend,
     process::{SignalFailure, TerminationMode, TerminationReport, TerminationRequest},
     ui::{self, Theme},
 };
@@ -10,10 +11,8 @@ use xield::{
 fn key(app: &mut App, code: KeyCode) -> Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))
 }
-fn demo() -> (Backend, App) {
-    let mut backend = Backend::new(true).unwrap();
-    let app = App::new(backend.snapshot().unwrap());
-    (backend, app)
+fn fixture_app() -> App {
+    App::new(common::snapshot())
 }
 fn proposed(app: &App) -> &TerminationRequest {
     match app.popup.as_ref().unwrap() {
@@ -27,7 +26,7 @@ fn proposed(app: &App) -> &TerminationRequest {
 
 #[test]
 fn modes_require_confirmation_and_cancellation_sends_nothing() {
-    let (_, mut app) = demo();
+    let mut app = fixture_app();
     for (code, mode) in [
         ('x', TerminationMode::Terminate),
         ('X', TerminationMode::ForceKill),
@@ -45,12 +44,12 @@ fn modes_require_confirmation_and_cancellation_sends_nothing() {
 
 #[test]
 fn peer_selection_targets_its_app_and_preserves_confirmed_identity() {
-    let (mut backend, mut app) = demo();
+    let mut app = fixture_app();
     key(&mut app, KeyCode::Enter);
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Char('x'));
     let original = proposed(&app).clone();
-    let mut snapshot = backend.snapshot().unwrap();
+    let mut snapshot = common::snapshot();
     snapshot.activity[0].identities[0].pid_version += 1;
     app.update(snapshot, false);
     let effect = key(&mut app, KeyCode::Enter);
@@ -64,7 +63,7 @@ fn peer_selection_targets_its_app_and_preserves_confirmed_identity() {
 
 #[test]
 fn unverified_rows_and_non_activity_views_do_not_propose_termination() {
-    let (_, mut app) = demo();
+    let mut app = fixture_app();
     app.snapshot.activity[0].identities.clear();
     key(&mut app, KeyCode::Char('x'));
     assert!(app.popup.is_none());
@@ -82,43 +81,31 @@ fn unverified_rows_and_non_activity_views_do_not_propose_termination() {
 }
 
 #[test]
-fn demo_simulates_signals_and_rejects_entire_stale_request() {
-    let (mut backend, mut app) = demo();
-    let before = backend.snapshot().unwrap();
+fn completed_signal_report_preserves_observed_rows_until_refresh() {
+    let mut app = fixture_app();
     key(&mut app, KeyCode::Char('x'));
     let request = key(&mut app, KeyCode::Enter).terminate.unwrap();
-    let mut stale = request.clone();
-    stale.targets[1].start_sec += 1;
-    assert!(backend.terminate(&stale).is_err());
-    assert_eq!(
-        backend.snapshot().unwrap().activity.len(),
-        before.activity.len()
+    let observed = app.snapshot.clone();
+    app.termination_finished(
+        observed,
+        &TerminationReport {
+            attempted: request.targets.len(),
+            delivered: request.targets.iter().map(|target| target.pid).collect(),
+            failures: Vec::new(),
+        },
     );
-    let report = backend.terminate(&request).unwrap();
-    assert_eq!(report.delivered, vec![201, 204]);
-    let after = backend.snapshot().unwrap();
-    assert_eq!(after.firewall, before.firewall);
-    assert_eq!(after.applications, before.applications);
-    assert_eq!(
-        serde_json::to_value(&after.network).unwrap(),
-        serde_json::to_value(&before.network).unwrap()
-    );
-    assert_eq!(after.activity.len(), before.activity.len() - 1);
-    app.termination_finished(after, &report);
     assert!(!app.busy);
-    assert!(
-        app.notice
-            .as_ref()
-            .unwrap()
-            .text
-            .contains("no signals sent")
-    );
+    assert_eq!(app.snapshot.activity[0].identities, request.targets);
+    let notice = app.notice.unwrap();
+    assert!(!notice.error);
+    assert!(notice.text.contains("Signal delivered to 2 processes"));
+    assert!(notice.text.contains("refresh"));
+    assert!(!notice.text.contains("terminated"));
 }
 
 #[test]
-fn live_partial_result_reports_delivery_without_claiming_exit() {
-    let (_, mut app) = demo();
-    app.snapshot.demo = false;
+fn partial_result_reports_delivery_without_claiming_exit() {
+    let mut app = fixture_app();
     app.busy = true;
     app.termination_finished(
         app.snapshot.clone(),
@@ -154,7 +141,7 @@ fn mouse_termination_and_force_confirmation_are_visible_at_supported_widths() {
                 TerminationMode::ForceKill,
             ),
         ] {
-            let (_, mut app) = demo();
+            let mut app = fixture_app();
             for (label, confirm) in [(shortcut, false), (button, true)] {
                 let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
                 let mut hits = None;
@@ -205,7 +192,7 @@ fn mouse_termination_and_force_confirmation_are_visible_at_supported_widths() {
 
 #[test]
 fn confirmation_lists_every_captured_process_path_instead_of_an_ellipsis() {
-    let (_, mut app) = demo();
+    let mut app = fixture_app();
     let mut target = app.snapshot.activity[0].identities[0].clone();
     for index in 0..8 {
         target.pid = 1000 + index;

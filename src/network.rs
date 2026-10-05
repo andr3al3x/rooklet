@@ -8,12 +8,14 @@ mod config;
 mod lifecycle;
 mod persistence;
 mod pf;
+mod preflight;
 
 pub use analysis::{
     QueryField, RuleExplanation, RuleQuery, ShadowWarning, explain_rules, shadow_warnings,
 };
 pub use compiler::{compile_rules, render_rules, validate_rules};
 pub use lifecycle::{apply, disable, remove, setup, status};
+pub use preflight::preflight_apply;
 
 const CONFIG: &str = "/etc/pf.conf";
 const ANCHOR_FILE: &str = "/etc/pf.anchors/xield";

@@ -4,8 +4,6 @@ A compact Rust TUI for macOS firewall settings, network rules, and app traffic.
 Manage incoming permissions, inspect connections and countries, and apply
 machine-wide network rules from one terminal.
 
-![Xield Activity view showing simulated app traffic in demo mode](docs/images/activity.png)
-
 One executable. Keyboard and mouse navigation. No Swift companion, system
 extension, Apple Developer account, or notarization workflow for source installs.
 
@@ -16,14 +14,9 @@ Clone this repository, open its directory, and install from source:
 
 ```sh
 cargo install --path . --locked
-xield --demo
 ```
 
-Demo mode uses simulated traffic and in-memory permissions. It never changes
-firewall settings, downloads country data, or sends process signals. Separate
-CLI invocations start separate demo sessions.
-
-For your Mac's actual state, run as your normal user:
+Run as your normal user:
 
 ```sh
 xield doctor
@@ -34,9 +27,8 @@ Launching Xield does not activate or change either firewall. Administrator
 access is requested when needed through normal `sudo` authentication; you do
 not need to run the whole app with `sudo`.
 
-Without installing, use `cargo run --locked -- --demo` or
-`cargo run --release --locked --`. Use at least **80 × 24** for comfortable
-navigation; the minimum is 50 × 17. No patched font is required.
+Without installing, use `cargo run --release --locked --`. Use at least **80 × 24**
+for comfortable navigation; the minimum is 50 × 17. No patched font is required.
 
 ## Binary installation (no Rust required)
 
@@ -54,7 +46,6 @@ cd xield-0.2.0-macos-arm64
 sh install.sh
 export PATH="$HOME/.local/bin:$PATH"
 xield --version
-xield --demo
 ```
 
 The bundled installer needs only macOS's standard tools; neither Rust nor Xcode
@@ -293,6 +284,7 @@ Helpers are grouped by verified app paths; unresolved processes stay separate.
 | `x` / `X` in Activity | Review termination / force kill of the app and captured helpers |
 | `u` | Authenticate for privileged reads and changes |
 | `g` in Settings | Install/update country data |
+| `p` | Open saved profiles; review changes or export the current configuration |
 | `?`, `q`, `Ctrl-C` | Help; quit |
 
 Click tabs, rows, footer shortcuts, and dialog buttons. Double-click a row to
@@ -315,6 +307,32 @@ unavailable on the host, termination fails explicitly. Signal delivery does not
 guarantee that a process has exited.
 
 ## Profiles
+
+Press `p` from any view to open saved profiles. Select a profile with the arrow
+keys or mouse, then press `Enter` / click **Review** to inspect changes to incoming
+settings, app permissions, and ordered machine-wide PF rules. Applying requires a
+separate confirmation and normal administrator authentication. A changed firewall
+baseline invalidates the review; reopen it before applying again.
+
+In the profile list, press `e` / click **Export** and enter a new name to save the
+current configuration. Existing profiles are never overwritten. Complete firewall
+status is required; close the dialog and press `u` to unlock privileged reads if
+needed. Profiles are stored as JSON in
+`~/Library/Application Support/xield/profiles/`. Names use up to 64 ASCII letters,
+digits, spaces, underscores, or hyphens. Existing CLI profile files can be placed
+in this directory with a valid name and `.json` extension.
+
+Profiles replace all three included scopes, including removal of incoming app
+entries and PF rules absent from the profile. Applying a profile with a configured
+PF setup applies its ordered rules. The review describes any activation changes
+and shadow warnings. Restoration is best effort; ALF changes are not atomic.
+No automatic network switching or startup application is performed.
+
+Before applying, Xield also checks the proposed PF rules against the host's
+interfaces, managed parent layout, trusted files, and PF syntax without changing
+firewall state. The subsequent application still revalidates live state.
+
+The same validation and application logic is available from the CLI:
 
 ```sh
 xield profile export profile.json

@@ -9,17 +9,6 @@ fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_xield"))
 }
 #[test]
-fn demo_status_is_explicit_and_contains_new_models() {
-    let output = cli().args(["--demo", "status"]).output().unwrap();
-    assert!(output.status.success());
-    let data: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(data["demo"], true);
-    assert!(data["activity"].as_array().unwrap().len() > 1);
-    assert!(data["firewall"].is_object());
-    assert!(data.get("protocol_version").is_none());
-    assert!(data.get("pending").is_none());
-}
-#[test]
 fn extension_cli_commands_and_flags_are_gone() {
     for args in [
         vec!["--bridge", "/tmp/host", "status"],
@@ -30,60 +19,44 @@ fn extension_cli_commands_and_flags_are_gone() {
         assert!(!cli().args(args).output().unwrap().status.success());
     }
 }
+fn supplied_profile() -> Value {
+    json!({
+        "format": "xield-profile", "version": 1,
+        "firewall": {"enabled": true, "stealth": false, "block_all": false,
+                     "allow_signed": true, "allow_signed_app": true},
+        "applications": [{"path": "/nonexistent/App.app", "name": "App", "blocked": true}],
+        "network_rules": []
+    })
+}
 #[test]
-fn profile_export_roundtrips_and_never_overwrites() {
+fn supplied_profile_check_roundtrips_without_changing_input() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("profile.json");
+    let profile = supplied_profile();
+    let before = serde_json::to_vec(&profile).unwrap();
+    fs::write(&path, &before).unwrap();
+    let output = cli()
+        .args(["profile", "check"])
+        .arg(&path)
+        .output()
+        .unwrap();
     assert!(
-        cli()
-            .args(["--demo", "profile", "export"])
-            .arg(&path)
-            .output()
-            .unwrap()
-            .status
-            .success()
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let before = fs::read(&path).unwrap();
-    let data: Value = serde_json::from_slice(&before).unwrap();
-    assert_eq!(data["format"], "xield-profile");
-    assert!(
-        cli()
-            .args(["--demo", "profile", "check"])
-            .arg(&path)
-            .output()
-            .unwrap()
-            .status
-            .success()
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        profile
     );
-    assert!(
-        !cli()
-            .args(["--demo", "profile", "export"])
-            .arg(&path)
-            .output()
-            .unwrap()
-            .status
-            .success()
-    );
-    assert_eq!(before, fs::read(&path).unwrap());
-    assert!(
-        !cli()
-            .args(["--demo", "profile", "apply"])
-            .arg(&path)
-            .output()
-            .unwrap()
-            .status
-            .success()
-    );
-    assert!(
-        cli()
-            .args(["--demo", "profile", "apply"])
-            .arg(&path)
-            .arg("--yes")
-            .output()
-            .unwrap()
-            .status
-            .success()
-    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    let output = cli()
+        .args(["profile", "apply"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("pass --yes"));
 }
 #[test]
 fn profiles_reject_old_schema_and_unknown_fields() {
@@ -110,18 +83,13 @@ fn profiles_reject_old_schema_and_unknown_fields() {
 fn profiles_reject_non_normalized_paths_before_apply() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("profile.json");
-    let exported = cli()
-        .args(["--demo", "profile", "export"])
-        .output()
-        .unwrap();
-    assert!(exported.status.success());
-    let mut profile: Value = serde_json::from_slice(&exported.stdout).unwrap();
+    let mut profile = supplied_profile();
     for application_path in ["/", "/Applications/../Example.app", "relative.app"] {
         profile["applications"][0]["path"] = application_path.into();
         fs::write(&path, serde_json::to_vec(&profile).unwrap()).unwrap();
         for command in ["check", "apply"] {
             let mut invocation = cli();
-            invocation.args(["--demo", "profile", command]).arg(&path);
+            invocation.args(["profile", command]).arg(&path);
             if command == "apply" {
                 invocation.arg("--yes");
             }
@@ -157,7 +125,7 @@ fn preview_reads_stdin_without_applying_pf() {
 fn invalid_rules_and_ports_fail_before_authentication() {
     assert!(
         !cli()
-            .args(["--demo", "network", "add", "203.0.113.1", "--port", "0"])
+            .args(["network", "add", "203.0.113.1", "--port", "0"])
             .output()
             .unwrap()
             .status
@@ -195,18 +163,4 @@ fn country_update_help_replaces_the_old_path_flag() {
             .status
             .success()
     );
-}
-
-#[test]
-fn demo_country_update_downloads_nothing_and_creates_no_files() {
-    let home = tempdir().unwrap();
-    let output = cli()
-        .args(["--demo", "geoip", "update"])
-        .env("HOME", home.path())
-        .env("XIELD_GEOIP", "/nonexistent/obsolete.mmdb")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("No download or files changed"));
-    assert_eq!(fs::read_dir(home.path()).unwrap().count(), 0);
 }

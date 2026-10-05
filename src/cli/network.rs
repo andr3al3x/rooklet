@@ -4,15 +4,11 @@ use crate::{auth::authenticate, json::print_json};
 use anyhow::{Context, Result, ensure};
 use std::{sync::atomic::AtomicBool, time::Duration};
 use xield::{
-    backend::Backend,
-    model::{Mutation, NetworkRule, NetworkStatus},
+    model::{NetworkRule, NetworkStatus},
     network,
 };
 
-pub(super) fn network_status(demo: bool) -> Result<NetworkStatus> {
-    if demo {
-        return Ok(Backend::new(true)?.snapshot()?.network);
-    }
+pub(super) fn network_status() -> Result<NetworkStatus> {
     if xield::command::is_root() {
         return Ok(network::status());
     }
@@ -72,11 +68,11 @@ fn network_change(change: NetworkChange<'_>) -> Result<()> {
     )?;
     Ok(())
 }
-pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
+pub(super) fn run(command: NetworkCommand) -> Result<()> {
     let setup = matches!(&command, NetworkCommand::Setup(_));
     match command {
-        NetworkCommand::Status => return print_json(&network_status(demo)?),
-        NetworkCommand::Check(input) => return super::network_analysis::check(&input, demo),
+        NetworkCommand::Status => return print_json(&network_status()?),
+        NetworkCommand::Check(input) => return super::network_analysis::check(&input),
         NetworkCommand::Explain {
             input,
             remote,
@@ -87,7 +83,6 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
         } => {
             return super::network_analysis::explain(
                 &input,
-                demo,
                 network::RuleQuery {
                     remote_ip: remote,
                     protocol,
@@ -97,6 +92,24 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
                 },
             );
         }
+        NetworkCommand::Preflight(input) => {
+            let rules = input_rules(&input, false)?;
+            if xield::command::is_root() {
+                network::preflight_apply(&rules)?;
+            } else {
+                authenticate()?;
+                xield::command::run_with_timeout(
+                    &std::env::current_exe()?,
+                    &["network".into(), "preflight".into(), "--stdin".into()],
+                    Some(&serde_json::to_vec(&rules)?),
+                    true,
+                    &AtomicBool::new(false),
+                    Duration::from_secs(90),
+                )?;
+            }
+            println!("PF preflight passed; firewall state is unchanged.");
+            return Ok(());
+        }
         NetworkCommand::Preview(input) => {
             print!("{}", network::render_rules(&input_rules(&input, false)?)?);
             return Ok(());
@@ -104,11 +117,6 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
         NetworkCommand::Setup(input) | NetworkCommand::Apply(input) => {
             let rules = input_rules(&input, setup)?;
             super::network_analysis::warn(&rules)?;
-            if demo {
-                let mut backend = Backend::new(true)?;
-                backend.mutate(Mutation::NetworkRules(rules))?;
-                return print_json(&backend.snapshot()?.network);
-            }
             network_change(if setup {
                 NetworkChange::Setup(&rules)
             } else {
@@ -117,12 +125,6 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
         }
         NetworkCommand::Disable | NetworkCommand::Remove => {
             let remove = matches!(command, NetworkCommand::Remove);
-            if demo {
-                return print_json(&NetworkStatus {
-                    message: Some("Demo only; no PF settings changed".into()),
-                    ..Default::default()
-                });
-            }
             network_change(if remove {
                 NetworkChange::Remove
             } else {
@@ -130,10 +132,8 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
             })?;
         }
         command => {
-            if !demo {
-                authenticate()?;
-            }
-            let status = network_status(demo)?;
+            authenticate()?;
+            let status = network_status()?;
             ensure!(
                 status.rules_available,
                 "saved PF rules are unavailable; authenticate before changing them"
@@ -200,13 +200,8 @@ pub(super) fn run(command: NetworkCommand, demo: bool) -> Result<()> {
             }
             network::validate_rules(&rules)?;
             super::network_analysis::warn(&rules)?;
-            if demo {
-                let mut backend = Backend::new(true)?;
-                backend.mutate(Mutation::NetworkRules(rules))?;
-                return print_json(&backend.snapshot()?.network);
-            }
             network_change(NetworkChange::Apply(&rules))?;
         }
     }
-    print_json(&network_status(false)?)
+    print_json(&network_status()?)
 }

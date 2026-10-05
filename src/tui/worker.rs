@@ -10,15 +10,18 @@ use std::{
     time::{Duration, Instant},
 };
 use xield::{
+    app::{ProfileOperation, ProfileOutcome},
     backend::Backend,
     model::{Mutation, Snapshot},
     process::{TerminationReport, TerminationRequest},
+    profile,
 };
 
 pub(super) struct Update {
     pub result: Result<Snapshot>,
     pub kind: UpdateKind,
     pub termination: Option<TerminationReport>,
+    pub profile: Option<ProfileOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,12 +30,14 @@ pub(super) enum UpdateKind {
     Firewall,
     GeoIp,
     Terminate,
+    Profile,
 }
 
 enum Work {
     Firewall(Mutation),
     GeoIp,
     Terminate(TerminationRequest),
+    Profile(ProfileOperation),
 }
 
 impl Work {
@@ -41,14 +46,50 @@ impl Work {
             Self::Firewall(_) => UpdateKind::Firewall,
             Self::GeoIp => UpdateKind::GeoIp,
             Self::Terminate(_) => UpdateKind::Terminate,
+            Self::Profile(_) => UpdateKind::Profile,
         }
     }
 
-    fn run(self, backend: &mut Backend) -> Result<Option<TerminationReport>> {
+    fn run(self, backend: &mut Backend) -> Result<WorkReport> {
+        let mut report = WorkReport::default();
         match self {
-            Self::Firewall(mutation) => backend.mutate(mutation).map(|()| None),
-            Self::GeoIp => backend.update_geoip().map(|()| None),
-            Self::Terminate(request) => backend.terminate(&request).map(Some),
+            Self::Firewall(mutation) => backend.mutate(mutation)?,
+            Self::GeoIp => backend.update_geoip()?,
+            Self::Terminate(request) => report.termination = Some(backend.terminate(&request)?),
+            Self::Profile(operation) => report.profile = Some(profile_work(backend, operation)?),
+        }
+        Ok(report)
+    }
+}
+
+#[derive(Default)]
+struct WorkReport {
+    termination: Option<TerminationReport>,
+    profile: Option<ProfileOutcome>,
+}
+
+fn profile_work(backend: &mut Backend, operation: ProfileOperation) -> Result<ProfileOutcome> {
+    match operation {
+        ProfileOperation::List => Ok(ProfileOutcome::Listed(profile::list()?)),
+        ProfileOperation::Prepare(name) => {
+            let profile = profile::load(&name)?;
+            let prepared = profile::prepare(&profile, &backend.snapshot()?)?;
+            Ok(ProfileOutcome::Prepared {
+                name,
+                prepared: Box::new(prepared),
+            })
+        }
+        ProfileOperation::Export(name) => {
+            let profile = profile::export(&backend.snapshot()?)?;
+            let mut entries = profile::list()?;
+            profile::save(&name, &profile)?;
+            entries.push(name.clone());
+            entries.sort();
+            Ok(ProfileOutcome::Exported { name, entries })
+        }
+        ProfileOperation::Apply(prepared) => {
+            profile::apply(backend, &prepared)?;
+            Ok(ProfileOutcome::Applied)
         }
     }
 }
@@ -62,7 +103,7 @@ pub(super) struct Worker {
 }
 
 impl Worker {
-    pub fn start(demo: bool) -> Result<Self> {
+    pub fn start() -> Result<Self> {
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let (commands, work) = mpsc::sync_channel(1);
@@ -71,7 +112,7 @@ impl Worker {
             .name("xield-backend".into())
             .spawn(move || {
                 // Database validation and monitor startup must not block the first TUI frame.
-                let mut backend = match Backend::new(demo) {
+                let mut backend = match Backend::new() {
                     Ok(backend) => backend.with_cancellation(Arc::clone(&worker_cancel)),
                     Err(error) => {
                         let _ = publish(
@@ -80,6 +121,7 @@ impl Worker {
                                 result: Err(error),
                                 kind: UpdateKind::Observation,
                                 termination: None,
+                                profile: None,
                             },
                         );
                         return;
@@ -87,13 +129,14 @@ impl Worker {
                 };
                 observe(work, responses, &worker_cancel, |work| {
                     let kind = work.as_ref().map_or(UpdateKind::Observation, Work::kind);
-                    let termination = match work.map(|work| work.run(&mut backend)).transpose() {
-                        Ok(report) => report.flatten(),
+                    let report = match work.map(|work| work.run(&mut backend)).transpose() {
+                        Ok(report) => report.unwrap_or_default(),
                         Err(error) => {
                             return Update {
                                 result: Err(error),
                                 kind,
                                 termination: None,
+                                profile: None,
                             };
                         }
                     };
@@ -101,7 +144,8 @@ impl Worker {
                     Update {
                         result: backend.snapshot(),
                         kind,
-                        termination,
+                        termination: report.termination,
+                        profile: report.profile,
                     }
                 });
             })
@@ -125,6 +169,10 @@ impl Worker {
 
     pub fn terminate(&mut self, request: TerminationRequest) -> Result<()> {
         self.submit_work(Work::Terminate(request))
+    }
+
+    pub fn profile(&mut self, operation: ProfileOperation) -> Result<()> {
+        self.submit_work(Work::Profile(operation))
     }
 
     fn submit_work(&mut self, work: Work) -> Result<()> {

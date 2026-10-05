@@ -1,14 +1,15 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use xield::{
     app::{App, Popup, process_key},
-    backend::Backend,
     model::Application,
     ui::{self, Theme},
 };
 
-fn demo() -> App {
-    let mut snapshot = Backend::new(true).unwrap().snapshot().unwrap();
+fn fixture_app() -> App {
+    let mut snapshot = common::snapshot();
     snapshot.notices.clear();
     for process in &mut snapshot.activity {
         process.rate_in = 101;
@@ -49,7 +50,7 @@ fn row(buffer: &Buffer, label: &str) -> u16 {
 }
 
 fn header_column(buffer: &Buffer, label: &str) -> u16 {
-    let y = row(buffer, label);
+    let y = row(buffer, "APP / PEER");
     (0..buffer.area.width)
         .find(|&x| {
             (x..buffer.area.width)
@@ -82,7 +83,7 @@ fn key(app: &mut App, code: KeyCode) {
 
 #[test]
 fn all_process_rows_show_peer_counts_and_session_totals_without_an_inspector() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let extra_peer = app.snapshot.activity[1].connections[0].clone();
     app.snapshot.activity[1].connections.push(extra_peer);
     for (width, height) in [(80, 24), (120, 34), (140, 40)] {
@@ -101,7 +102,7 @@ fn all_process_rows_show_peer_counts_and_session_totals_without_an_inspector() {
 
 #[test]
 fn expanded_peers_have_totals_but_never_inherit_process_rates() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let identity = process_key(&app.snapshot.activity[0]);
     app.expanded.insert(identity);
     for (width, height) in [(80, 24), (120, 34), (140, 40)] {
@@ -133,7 +134,7 @@ fn expanded_peers_have_totals_but_never_inherit_process_rates() {
 
 #[test]
 fn incoming_entries_match_paths_and_distinguish_unavailable_and_unlisted() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let terminal_path = app.snapshot.activity[1].path.clone().unwrap();
     app.snapshot.applications.push(Application {
         path: terminal_path.clone(),
@@ -177,7 +178,7 @@ fn incoming_entries_match_paths_and_distinguish_unavailable_and_unlisted() {
 
 #[test]
 fn maximum_counters_keep_units_and_rate_suffixes_visible() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let process = &mut app.snapshot.activity[0];
     process.rate_in = u64::MAX;
     process.rate_out = 100 * 1024 * 1024;
@@ -200,7 +201,7 @@ fn maximum_counters_keep_units_and_rate_suffixes_visible() {
 
 #[test]
 fn narrow_ipv6_rows_preserve_inspection_and_sanitize_untrusted_text() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.snapshot.activity.truncate(1);
     let address = "2001:db8:1234:5678:9abc:def0:1234:5678";
     let process = &mut app.snapshot.activity[0];
@@ -246,7 +247,7 @@ fn narrow_ipv6_rows_preserve_inspection_and_sanitize_untrusted_text() {
 
 #[test]
 fn country_summaries_count_distinct_hidden_countries() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let process = &mut app.snapshot.activity[0];
     let peer = process.connections[0].clone();
     process.connections = ["US", "DE", "FR", "JP", "DE", "US"]
@@ -276,7 +277,7 @@ fn country_summaries_count_distinct_hidden_countries() {
 
 #[test]
 fn truncated_names_keep_combining_characters_and_joined_emoji_together() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.snapshot.activity[0].name = format!("Glyph {}", "e\u{301}👩\u{200d}💻界".repeat(12));
     for (width, height) in [(50, 24), (60, 24), (80, 24), (120, 34), (140, 40)] {
         let buffer = render(&app, width, height);
@@ -306,7 +307,7 @@ fn truncated_names_keep_combining_characters_and_joined_emoji_together() {
 
 #[test]
 fn an_empty_filtered_table_reports_no_matches_instead_of_waiting_for_traffic() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.filters[0] = "no-such-app-or-peer".into();
     assert!(!app.snapshot.activity.is_empty());
     for (width, height) in [(80, 24), (120, 34), (140, 40)] {
@@ -318,7 +319,7 @@ fn an_empty_filtered_table_reports_no_matches_instead_of_waiting_for_traffic() {
 
 #[test]
 fn wide_path_cells_preserve_app_names_and_complete_directory_components() {
-    let app = demo();
+    let app = fixture_app();
     let safari_path = app.snapshot.activity[0].path.as_deref().unwrap();
     for (width, height) in [(120, 34), (140, 40)] {
         let buffer = render(&app, width, height);
@@ -342,7 +343,7 @@ fn wide_path_cells_preserve_app_names_and_complete_directory_components() {
 
 #[test]
 fn expansion_markers_follow_visible_peers_and_manual_expansion() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.filters[0] = "app:Safari proto:tcp".into();
     for (width, height) in [(80, 24), (120, 34)] {
         let buffer = render(&app, width, height);
@@ -363,7 +364,7 @@ fn expansion_markers_follow_visible_peers_and_manual_expansion() {
 
 #[test]
 fn an_open_inspector_tracks_the_sample_independently_of_filter_changes() {
-    let mut app = demo();
+    let mut app = fixture_app();
     key(&mut app, KeyCode::Enter);
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);

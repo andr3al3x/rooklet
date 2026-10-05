@@ -20,9 +20,7 @@ impl App {
         } else {
             "processes"
         };
-        let text = if self.snapshot.demo {
-            format!("Demo termination simulated for {count} {noun}; no signals sent")
-        } else if report.failures.is_empty() {
+        let text = if report.failures.is_empty() {
             format!("Signal delivered to {count} {noun}; activity will refresh")
         } else {
             format!(

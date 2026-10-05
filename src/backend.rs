@@ -1,7 +1,6 @@
-//! Firewall backend facade with explicit live and simulated implementations.
+//! macOS firewall operations and local activity observations.
 mod alf;
 mod application;
-mod demo;
 mod live;
 mod parser;
 
@@ -13,7 +12,6 @@ use crate::{
     model::{Mutation, Snapshot},
 };
 use anyhow::{Context, Result, ensure};
-use demo::Demo;
 use live::Live;
 use std::{
     sync::{
@@ -24,22 +22,13 @@ use std::{
 };
 
 pub struct Backend {
-    state: State,
+    live: Live,
     cancel: Arc<AtomicBool>,
 }
-enum State {
-    Demo(Box<Demo>),
-    Live(Box<Live>),
-}
 impl Backend {
-    pub fn new(demo: bool) -> Result<Self> {
-        let state = if demo {
-            State::Demo(Box::new(Demo::new()))
-        } else {
-            State::Live(Box::new(Live::new()?))
-        };
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            state,
+            live: Live::new()?,
             cancel: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -47,28 +36,17 @@ impl Backend {
         self.cancel = cancel;
         self
     }
-    pub fn is_demo(&self) -> bool {
-        matches!(self.state, State::Demo(_))
-    }
     pub fn snapshot(&mut self) -> Result<Snapshot> {
         ensure!(!self.cancel.load(Ordering::Relaxed), "snapshot cancelled");
-        match &mut self.state {
-            State::Demo(demo) => Ok(demo.snapshot()),
-            State::Live(live) => live.snapshot(&self.cancel),
-        }
+        self.live.snapshot(&self.cancel)
     }
     pub fn update_geoip(&mut self) -> Result<()> {
         ensure!(
             !self.cancel.load(Ordering::Relaxed),
             "country database update cancelled"
         );
-        match &mut self.state {
-            State::Demo(_) => Ok(()),
-            State::Live(live) => {
-                crate::geoip::update(&self.cancel)?;
-                live.reload_geoip()
-            }
-        }
+        crate::geoip::update(&self.cancel)?;
+        self.live.reload_geoip()
     }
     pub fn terminate(
         &mut self,
@@ -78,16 +56,31 @@ impl Backend {
             !self.cancel.load(Ordering::Relaxed),
             "termination cancelled"
         );
-        match &mut self.state {
-            State::Demo(demo) => demo.terminate(request),
-            State::Live(_) => crate::process::terminate(request),
-        }
+        crate::process::terminate(request)
     }
+    /// Validate the entire proposed PF configuration without changing live state.
+    pub fn preflight_network_rules(&self, rules: &[crate::model::NetworkRule]) -> Result<()> {
+        ensure!(
+            !self.cancel.load(Ordering::Relaxed),
+            "profile validation cancelled"
+        );
+        crate::network::validate_rules(rules)?;
+        let executable = std::env::current_exe()
+            .context("unable to locate xield executable")?
+            .canonicalize()?;
+        command::run_with_timeout(
+            &executable,
+            &["network".into(), "preflight".into(), "--stdin".into()],
+            Some(&serde_json::to_vec(rules)?),
+            true,
+            &self.cancel,
+            Duration::from_secs(90),
+        )?;
+        Ok(())
+    }
+
     pub fn mutate(&mut self, mutation: Mutation) -> Result<()> {
         ensure!(!self.cancel.load(Ordering::Relaxed), "mutation cancelled");
-        if let State::Demo(demo) = &mut self.state {
-            return demo.mutate(mutation);
-        }
         match mutation {
             Mutation::NetworkRules(rules) => {
                 crate::network::validate_rules(&rules)?;

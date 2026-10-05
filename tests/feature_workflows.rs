@@ -1,14 +1,15 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use xield::{
     app::{ActivitySort, App, MouseAction, Popup, View},
-    backend::Backend,
     model::{Action, Direction, Mutation, NetworkRule, Protocol},
     ui::{self, HitMap, Theme},
 };
 
-fn demo() -> App {
-    App::new(Backend::new(true).unwrap().snapshot().unwrap())
+fn fixture_app() -> App {
+    App::new(common::snapshot())
 }
 fn key(app: &mut App, code: KeyCode) -> xield::app::Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))
@@ -78,7 +79,7 @@ fn rule(id: &str, destination: &str, port: Option<u16>) -> NetworkRule {
 #[test]
 fn peer_draft_captures_metadata_but_only_applies_after_two_review_steps() {
     for protocol in [Protocol::Tcp, Protocol::Udp, Protocol::Any] {
-        let mut app = demo();
+        let mut app = fixture_app();
         let flow = &mut app.snapshot.activity[0].connections[0];
         flow.protocol = protocol;
         flow.remote_port = Some(5353);
@@ -119,7 +120,7 @@ fn peer_draft_captures_metadata_but_only_applies_after_two_review_steps() {
 
 #[test]
 fn peer_shortcut_requires_a_selected_peer_and_available_pf_configuration() {
-    let mut app = demo();
+    let mut app = fixture_app();
     assert!(key(&mut app, KeyCode::Char('n')).mutation.is_none());
     assert!(app.popup.is_none());
     key(&mut app, KeyCode::Enter);
@@ -134,7 +135,7 @@ fn peer_shortcut_requires_a_selected_peer_and_available_pf_configuration() {
 
 #[test]
 fn mouse_peer_rule_and_cancel_follow_the_keyboard_review_flow() {
-    let mut app = demo();
+    let mut app = fixture_app();
     key(&mut app, KeyCode::Enter);
     key(&mut app, KeyCode::Down);
     assert!(click(&mut app, "[n IP rule]", 80, 24).mutation.is_none());
@@ -147,7 +148,7 @@ fn mouse_peer_rule_and_cancel_follow_the_keyboard_review_flow() {
 
 #[test]
 fn sorting_is_available_with_a_filter_and_stays_inside_modal_boundaries() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.filters[0] = "proto:tcp".into();
     let selected = app.selection[0].clone();
     app.searching = true;
@@ -183,7 +184,7 @@ fn sorting_is_available_with_a_filter_and_stays_inside_modal_boundaries() {
 
 #[test]
 fn shadow_warnings_are_present_before_edit_and_reorder_confirmation() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.snapshot.network.rules = vec![
         rule("broad", "any", None),
         rule("narrow", "203.0.113.0/24", Some(443)),
@@ -208,7 +209,7 @@ fn shadow_warnings_are_present_before_edit_and_reorder_confirmation() {
 #[test]
 fn explanation_fields_mouse_geometry_and_read_only_result_work_at_supported_sizes() {
     for (width, height) in [(140, 40), (80, 24), (50, 17)] {
-        let mut app = demo();
+        let mut app = fixture_app();
         app.snapshot.network.rules = vec![
             rule("web", "203.0.113.0/24", Some(443)),
             rule("fallback", "any", None),
@@ -247,7 +248,7 @@ fn explanation_fields_mouse_geometry_and_read_only_result_work_at_supported_size
 
 #[test]
 fn invalid_filters_are_visible_and_cannot_open_peer_rule_dialogs() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.filters[0] = "proto:typo".into();
     let (_, buffer) = render(&app, 80, 24);
     assert!(text(&buffer).contains("Invalid proto:"));
@@ -262,7 +263,7 @@ fn invalid_filters_are_visible_and_cannot_open_peer_rule_dialogs() {
 
 #[test]
 fn text_editors_bound_complete_utf8_characters_and_reject_controls() {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.popup = Some(Popup::Application {
         path: "a".repeat(4095),
     });

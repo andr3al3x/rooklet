@@ -7,6 +7,12 @@ use crate::{
 use crossterm::event::KeyCode;
 use ratatui::{Frame, layout::Rect, style::Style, text::Line, widgets::Paragraph};
 type Choice = (&'static str, KeyCode);
+const GLOBAL: [Choice; 4] = [
+    ("[/ Search]", KeyCode::Char('/')),
+    ("[u Unlock]", KeyCode::Char('u')),
+    ("[? Help]", KeyCode::Char('?')),
+    ("[q Quit]", KeyCode::Char('q')),
+];
 fn choices(view: View) -> &'static [Choice] {
     match view {
         View::Activity => &[
@@ -41,9 +47,18 @@ fn choices(view: View) -> &'static [Choice] {
     }
 }
 fn rows(app: &App, width: u16) -> Vec<Vec<Choice>> {
+    wrapped(
+        choices(app.view)
+            .iter()
+            .copied()
+            .chain(std::iter::once(("[p Profiles]", KeyCode::Char('p')))),
+        width,
+    )
+}
+fn wrapped(choices: impl IntoIterator<Item = Choice>, width: u16) -> Vec<Vec<Choice>> {
     let mut rows = vec![Vec::new()];
     let mut used = 0;
-    for &choice in choices(app.view) {
+    for choice in choices {
         let size = Line::raw(choice.0).width() as u16;
         let gap = if used == 0 { 0 } else { 2 };
         if used > 0 && used + gap + size > width {
@@ -56,16 +71,18 @@ fn rows(app: &App, width: u16) -> Vec<Vec<Choice>> {
     rows
 }
 pub(super) fn height(app: &App, width: u16) -> u16 {
-    if app.searching || !app.filter().is_empty() {
-        3
+    let toolbar = if app.searching || !app.filter().is_empty() {
+        1
     } else {
-        rows(app, width).len() as u16 + 2
-    }
+        rows(app, width).len() as u16
+    };
+    toolbar + wrapped(GLOBAL, width).len() as u16 + 1
 }
 pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &mut HitMap) {
     let row =
         |offset| Rect::new(area.x, area.y.saturating_add(offset), area.width, 1).intersection(area);
-    let toolbar_height = height(app, area.width) - 2;
+    let global = wrapped(GLOBAL, area.width);
+    let toolbar_height = height(app, area.width) - global.len() as u16 - 1;
     if app.searching || !app.filter().is_empty() {
         let text = if app.searching {
             format!("Search: {}█", clean(app.filter()))
@@ -78,18 +95,9 @@ pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &
             shortcuts(frame, row(offset as u16), choices, p, hits);
         }
     }
-    shortcuts(
-        frame,
-        row(toolbar_height),
-        &[
-            ("[/ Search]", KeyCode::Char('/')),
-            ("[u Unlock]", KeyCode::Char('u')),
-            ("[? Help]", KeyCode::Char('?')),
-            ("[q Quit]", KeyCode::Char('q')),
-        ],
-        p,
-        hits,
-    );
+    for (offset, choices) in global.iter().enumerate() {
+        shortcuts(frame, row(toolbar_height + offset as u16), choices, p, hits);
+    }
     let filter_error = if app.view == View::Activity {
         app.activity_filter_error()
     } else {
@@ -104,8 +112,6 @@ pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &
         )
     } else if let Some(error) = filter_error {
         (error, p.bad)
-    } else if app.snapshot.demo {
-        ("SIMULATED ACTIVITY · no settings changed".into(), p.warn)
     } else {
         (
             "Observed traffic · country estimates · no payload capture".into(),
@@ -114,6 +120,6 @@ pub(super) fn draw(frame: &mut Frame, app: &App, area: Rect, p: Palette, hits: &
     };
     frame.render_widget(
         Paragraph::new(last).style(Style::default().fg(color)),
-        row(toolbar_height + 1),
+        row(toolbar_height + global.len() as u16),
     );
 }

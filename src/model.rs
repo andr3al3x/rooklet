@@ -105,7 +105,6 @@ pub struct NetworkStatus {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Snapshot {
-    pub demo: bool,
     pub firewall: Option<FirewallSettings>,
     pub applications_available: bool,
     pub applications: Vec<Application>,

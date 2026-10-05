@@ -6,7 +6,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 impl App {
     pub(super) fn handle_popup(&mut self, mut popup: Popup, key: KeyEvent) -> Effect {
         if key.code == KeyCode::Esc {
+            self.pending_profile = None;
             return Effect::default();
+        }
+        if matches!(popup, Popup::Profiles { .. } | Popup::ProfileName { .. }) {
+            return self.handle_profile_popup(popup, key);
         }
         match &mut popup {
             Popup::Help | Popup::Inspect(_) if key.code == KeyCode::Enter => {
@@ -22,6 +26,10 @@ impl App {
                         },
                         ConfirmedAction::Terminate(request) => Effect {
                             terminate: Some(request.clone()),
+                            ..Default::default()
+                        },
+                        ConfirmedAction::Profile(prepared) => Effect {
+                            profile: Some(super::ProfileOperation::Apply(prepared.clone())),
                             ..Default::default()
                         },
                     };

@@ -21,33 +21,29 @@ pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     if let Some(command) = cli.command {
         if let CliCommand::Network { command } = command {
-            return network::run(command, cli.demo);
+            return network::run(command);
         }
         if let CliCommand::Geoip { command } = command {
-            return geoip::run(command, cli.demo);
+            return geoip::run(command);
         }
-        let mut backend = Backend::new(cli.demo)?;
+        if let CliCommand::Profile { command } = command {
+            return profile::run(command);
+        }
+        let mut backend = Backend::new()?;
         return run_command(&mut backend, command);
     }
     ensure!(
         io::stdin().is_terminal() && io::stdout().is_terminal(),
         "the TUI needs an interactive terminal; use `xield status` for JSON"
     );
-    crate::tui::run(cli.demo, cli.theme)
+    crate::tui::run(cli.theme)
 }
 fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
     match command {
         CliCommand::Status => print_json(&backend.snapshot()?)?,
         CliCommand::Doctor => {
             let snapshot = backend.snapshot()?;
-            println!(
-                "{}",
-                if backend.is_demo() {
-                    "Demo mode; system settings are untouched."
-                } else {
-                    "Standalone Rust; no companion or system extension required."
-                }
-            );
+            println!("Standalone Rust; no companion or system extension required.");
             println!(
                 "Incoming firewall: {}",
                 snapshot
@@ -113,17 +109,15 @@ fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
                 Mutation::Setting(setting, matches!(state, Switch::On)),
             )?,
         },
-        CliCommand::Profile { command } => profile::run(backend, command)?,
-        CliCommand::Network { command } => network::run(command, backend.is_demo())?,
-        CliCommand::Geoip { command } => geoip::run(command, backend.is_demo())?,
+        CliCommand::Profile { command } => profile::run(command)?,
+        CliCommand::Network { command } => network::run(command)?,
+        CliCommand::Geoip { command } => geoip::run(command)?,
     }
     Ok(())
 }
 fn mutate_cli(backend: &mut Backend, mutation: Mutation) -> Result<()> {
     let mutation = applications::preflight(backend, mutation)?;
-    if !backend.is_demo() {
-        authenticate()?;
-    }
+    authenticate()?;
     backend.mutate(mutation)?;
     print_json(&backend.snapshot()?)
 }

@@ -1,4 +1,4 @@
-.PHONY: check test release demo install uninstall package
+.PHONY: check test release install uninstall package
 BIN_DIR ?= $(HOME)/.local/bin
 TARGET ?=
 
@@ -11,8 +11,6 @@ test:
 	cargo test --locked
 release:
 	sh scripts/build-release.sh $(if $(TARGET),--target "$(TARGET)")
-demo:
-	cargo run -- --demo
 install:
 	binary_path=$$(sh scripts/build-release.sh) && sh scripts/install.sh --binary "$$binary_path" --bin-dir "$(BIN_DIR)"
 uninstall:

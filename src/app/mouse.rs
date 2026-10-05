@@ -18,6 +18,7 @@ pub enum MouseAction {
     Key(KeyCode),
     DialogField(usize),
     DialogScroll(isize),
+    ProfileRow(usize),
 }
 
 impl App {
@@ -36,6 +37,26 @@ impl App {
                             .get()
                             .saturating_add_signed(delta.clamp(-3, 3) as i16),
                     );
+                }
+                if !self.busy
+                    && let Some(Popup::Profiles {
+                        entries, selected, ..
+                    }) = &mut self.popup
+                {
+                    *selected = selected
+                        .saturating_add_signed(delta.clamp(-3, 3))
+                        .min(entries.len().saturating_sub(1));
+                }
+            }
+            MouseAction::ProfileRow(index) if !self.busy => {
+                if let Some(Popup::Profiles {
+                    entries,
+                    selected,
+                    loading: false,
+                }) = &mut self.popup
+                    && index < entries.len()
+                {
+                    *selected = index;
                 }
             }
             MouseAction::DialogField(index) if !self.busy && index < 7 => {

@@ -119,6 +119,22 @@ pub(super) fn atomic_write(path: &Path, data: &[u8], mode: u32) -> Result<()> {
     let _ = fs::remove_file(temporary);
     result
 }
+/// Inspect destinations without creating the state directory or its lock.
+pub(super) fn validate_state_destination() -> Result<()> {
+    let directory = Path::new(STATE_DIR);
+    trusted_parents(directory)?;
+    validate_existing_destination(directory, true)?;
+    validate_existing_destination(&directory.join(".network.lock"), false)
+}
+
+fn validate_existing_destination(path: &Path, directory: bool) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => trusted(path, directory),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub(super) fn prepare_state() -> Result<()> {
     let path = Path::new(STATE_DIR);
     trusted_parents(path)?;
@@ -180,3 +196,7 @@ pub(super) fn backup_config(source: &str) -> Result<PathBuf> {
     atomic_write(&path, source.as_bytes(), 0o600)?;
     Ok(path)
 }
+
+#[cfg(test)]
+#[path = "persistence/tests.rs"]
+mod tests;

@@ -1,5 +1,6 @@
 //! Modal help, inspectors, editors, and mutation confirmations.
 mod information;
+mod profiles;
 mod rules;
 use super::{HitMap, mouse::shortcuts, theme::Palette};
 use crate::app::{App, ConfirmedAction, Popup};
@@ -33,7 +34,7 @@ pub(super) fn draw(
     hits: &mut HitMap,
 ) {
     let (title, height) = match popup {
-        Popup::Help => ("KEYBOARD & MOUSE", 24),
+        Popup::Help => ("KEYBOARD & MOUSE", 26),
         Popup::Inspect(_) => ("CONNECTION", 16),
         Popup::Confirm { title, action, .. } => (
             title.as_str(),
@@ -44,6 +45,7 @@ pub(super) fn draw(
                     action,
                     ConfirmedAction::Firewall(crate::model::Mutation::NetworkRules(_))
                 )
+                || matches!(action, ConfirmedAction::Profile(_))
             {
                 20
             } else {
@@ -51,6 +53,11 @@ pub(super) fn draw(
             },
         ),
         Popup::Application { .. } => ("ADD APPLICATION", 10),
+        Popup::Profiles { entries, .. } => (
+            "MANAGED PROFILES",
+            (entries.len().min(11) as u16 + 9).max(12),
+        ),
+        Popup::ProfileName { .. } => ("EXPORT CURRENT FIREWALL SCOPES", 13),
         Popup::Network { .. } => ("MACHINE-WIDE NETWORK RULE", 19),
         Popup::Explain { .. } => ("EXPLAIN XIELD RULES · PREDICTION ONLY", 23),
     };
@@ -95,10 +102,45 @@ pub(super) fn draw(
             ("[Enter Review]", KeyCode::Enter),
             ("[Esc Cancel]", KeyCode::Esc),
         ],
+        Popup::Profiles { loading: false, .. } => &[
+            ("[Enter Review]", KeyCode::Enter),
+            ("[e Export]", KeyCode::Char('e')),
+            ("[Esc Close]", KeyCode::Esc),
+        ],
+        Popup::Profiles { loading: true, .. } => &[("[Esc Cancel]", KeyCode::Esc)],
+        Popup::ProfileName { .. } => &[
+            ("[Enter Export]", KeyCode::Enter),
+            ("[Esc Cancel]", KeyCode::Esc),
+        ],
         Popup::Help | Popup::Inspect(_) | Popup::Explain { .. } => &[("[Esc Close]", KeyCode::Esc)],
     };
     let mut choices = choices.to_vec();
     let more = match popup {
+        Popup::Profiles {
+            entries,
+            selected,
+            loading,
+        } => {
+            profiles::list(frame, entries, *selected, *loading, content, p, hits);
+            false
+        }
+        Popup::ProfileName { name } => render_text(
+            frame,
+            content,
+            vec![
+                Line::raw("Name: letters, digits, spaces, - or _ (64 bytes)"),
+                Line::raw(format!("{}█", clean(name))),
+                Line::raw(""),
+                Line::raw(if app.busy {
+                    "Exporting…"
+                } else {
+                    "Saves incoming settings, app permissions, and PF rules."
+                }),
+                Line::raw("Existing profiles are never overwritten."),
+            ],
+            p,
+            None,
+        ),
         Popup::Network { draft, field } => {
             rules::edit(frame, draft, *field, content, p, hits);
             false

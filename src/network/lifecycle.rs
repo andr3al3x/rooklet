@@ -1,6 +1,6 @@
 //! Serialized setup, apply, disable, and removal transactions with rollback.
 use super::{
-    ANCHOR_FILE, CONFIG, MAX_FILE,
+    ANCHOR_FILE, CONFIG,
     compiler::compile_rules,
     config::{
         configured, has_parent_anchor, normalized_rules, parent_matches_managed_config,
@@ -165,18 +165,11 @@ pub fn apply(rules: &[NetworkRule]) -> Result<()> {
     apply_inner(rules)
 }
 fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
-    let compiled = compile_rules(rules)?;
-    verify_interfaces(rules)?;
-    trusted_parents(Path::new(CONFIG))?;
-    trusted(Path::new(CONFIG), false)?;
-    ensure!(
-        configured(&bounded_read(Path::new(CONFIG))?),
-        "Xield's parent anchor is not configured; run network setup first"
-    );
-    ensure!(
-        has_parent_anchor(&run(&["-sr"], None)?),
-        "Live parent PF rules do not reference Xield; run network setup after checking your PF configuration"
-    );
+    let super::preflight::Validated {
+        source: compiled,
+        expected,
+        previous,
+    } = super::preflight::validate(rules)?;
     prepare_state()?;
     let mut prior = read_state()?;
     if let Some(token) = &prior.enable_token
@@ -186,24 +179,6 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
         save_state(&prior)?;
     }
     let previous_live = normalized_rules(&run(&["-a", "xield", "-sr"], None)?);
-    trusted_parents(Path::new(ANCHOR_FILE))?;
-    trusted(Path::new(ANCHOR_FILE), false)?;
-    let previous = bounded_read(Path::new(ANCHOR_FILE))?;
-    ensure!(
-        previous.starts_with("# Xield network rules:"),
-        "Xield's anchor file was replaced; refusing to overwrite it"
-    );
-    let expected = validate_pf(&compiled)?;
-    let candidate = State {
-        rules: rules.to_vec(),
-        enable_token: Some("0".repeat(32)),
-        active: true,
-        loaded_rules: Some(expected.clone()),
-    };
-    ensure!(
-        serde_json::to_vec_pretty(&candidate)?.len() as u64 <= MAX_FILE,
-        "Compiled network state exceeds the 1 MiB safety limit; use fewer rules"
-    );
     // Record the new ownership token before loading any rules, so a later failure can release it.
     let mut next = prior.clone();
     if next.enable_token.is_none() {

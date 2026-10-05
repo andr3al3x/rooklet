@@ -12,9 +12,6 @@ use xield::{
     about = "A standalone macOS firewall manager and traffic monitor"
 )]
 pub(super) struct Cli {
-    /// Simulate activity and permissions; never changes system settings.
-    #[arg(long, global = true)]
-    pub(super) demo: bool,
     #[arg(long, value_enum, default_value = "dark", global = true)]
     pub(super) theme: Theme,
     #[command(subcommand)]
@@ -110,6 +107,8 @@ pub(super) enum NetworkCommand {
     Apply(InputRules),
     /// Render validated PF syntax without changing anything.
     Preview(InputRules),
+    /// Validate host PF configuration and rule syntax without changing firewall state.
+    Preflight(InputRules),
     Add(NetworkArgs),
     Delete {
         id: String,

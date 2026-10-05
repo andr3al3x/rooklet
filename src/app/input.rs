@@ -34,6 +34,7 @@ impl App {
             return Effect::default();
         }
         match key.code {
+            KeyCode::Char('p') if !self.busy => return self.open_profiles(),
             KeyCode::Char('w') if !self.busy && self.view == View::Network => {
                 if self.snapshot.network.rules_available {
                     self.popup = Some(Popup::Explain {

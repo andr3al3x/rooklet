@@ -1,14 +1,15 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use xield::{
     app::{App, Effect, MouseAction, Popup, SETTINGS, View},
-    backend::Backend,
     model::{Action, Application, Mutation, Protocol},
     ui::{self, HitMap, Theme},
 };
 
-fn demo() -> App {
-    App::new(Backend::new(true).unwrap().snapshot().unwrap())
+fn fixture_app() -> App {
+    App::new(common::snapshot())
 }
 
 fn render(app: &App, width: u16, height: u16) -> (HitMap, Buffer) {
@@ -69,7 +70,7 @@ fn key(app: &mut App, code: KeyCode) -> Effect {
 
 #[test]
 fn tabs_and_footer_shortcuts_work_while_searching() {
-    let mut app = demo();
+    let mut app = fixture_app();
     for view in View::ALL {
         assert!(click(&mut app, view.title()).mutation.is_none());
         assert_eq!(app.view, view);
@@ -88,7 +89,7 @@ fn tabs_and_footer_shortcuts_work_while_searching() {
 
 #[test]
 fn activity_row_click_selects_double_click_expands_and_gutter_collapses() {
-    let mut app = demo();
+    let mut app = fixture_app();
     let name = app.snapshot.activity[0].name.clone();
     let identity = app.activity_rows()[0].key();
     click(&mut app, &name);
@@ -113,7 +114,7 @@ fn activity_row_click_selects_double_click_expands_and_gutter_collapses() {
 #[test]
 fn double_click_settings_only_reviews_and_modal_blocks_background() {
     for (setting, label) in SETTINGS {
-        let mut app = demo();
+        let mut app = fixture_app();
         click(&mut app, "Settings");
         let original = app.snapshot.firewall.clone();
         assert!(click(&mut app, label).mutation.is_none());
@@ -151,7 +152,7 @@ fn double_click_settings_only_reviews_and_modal_blocks_background() {
 #[test]
 fn application_double_click_requires_confirmation_and_respects_busy_state() {
     for blocked in [false, true] {
-        let mut app = demo();
+        let mut app = fixture_app();
         app.snapshot.applications[0].blocked = blocked;
         let name = app.snapshot.applications[0].name.clone();
         let path = app.snapshot.applications[0].path.clone();
@@ -170,7 +171,7 @@ fn application_double_click_requires_confirmation_and_respects_busy_state() {
 }
 
 fn many_apps() -> App {
-    let mut app = demo();
+    let mut app = fixture_app();
     app.snapshot.applications = (0..60)
         .map(|index| Application {
             path: format!("/Applications/Program{index:02}.app"),
@@ -324,7 +325,7 @@ fn stale_row_actions_cannot_select_another_app_or_open_a_dialog() {
 
 #[test]
 fn editor_mouse_focus_and_choices_remain_aligned_with_long_text() {
-    let mut app = demo();
+    let mut app = fixture_app();
     click(&mut app, "Network");
     click(&mut app, "[n Add]");
     if let Some(Popup::Network { draft, .. }) = &mut app.popup {
@@ -356,7 +357,7 @@ fn editor_mouse_focus_and_choices_remain_aligned_with_long_text() {
 
 #[test]
 fn ignored_mouse_events_and_tiny_windows_have_no_targets() {
-    let app = demo();
+    let app = fixture_app();
     let (hits, buffer) = render(&app, 80, 24);
     let position = point(&buffer, "Settings");
     for kind in [
@@ -399,7 +400,7 @@ fn ignored_mouse_events_and_tiny_windows_have_no_targets() {
 
 #[test]
 fn country_update_button_uses_the_same_unprivileged_action_and_is_modal_safe() {
-    let mut app = demo();
+    let mut app = fixture_app();
     click(&mut app, "Settings");
     let (hits, buffer) = render(&app, 80, 24);
     let position = point(&buffer, "[g Update countries]");
@@ -424,7 +425,7 @@ fn country_update_button_uses_the_same_unprivileged_action_and_is_modal_safe() {
 
 #[test]
 fn confirmation_wheel_uses_visible_content_geometry_and_never_moves_background() {
-    let mut app = demo();
+    let mut app = fixture_app();
     key(&mut app, KeyCode::Char('b'));
     if let Some(Popup::Confirm { body, .. }) = &mut app.popup {
         *body = (0..50)

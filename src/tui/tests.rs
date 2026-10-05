@@ -4,6 +4,7 @@ fn update(result: Result<Snapshot>, partial: bool) -> Update {
     Update {
         result,
         kind: UpdateKind::Terminate,
+        profile: None,
         termination: Some(TerminationReport {
             attempted: 2,
             delivered: vec![201],
@@ -56,4 +57,30 @@ fn quitting_surfaces_post_signal_observation_failure() {
     .unwrap_err();
     assert!(error.to_string().contains("Signal delivered"));
     assert!(error.to_string().contains("observation unavailable"));
+}
+
+#[test]
+fn profile_result_preserves_completion_when_refresh_fails() {
+    let mut app = App::new(Snapshot {
+        firewall: Some(xield::model::FirewallSettings::default()),
+        ..Default::default()
+    });
+    app.busy = true;
+    apply_update(
+        &mut app,
+        Update {
+            result: Err(anyhow::anyhow!("observation unavailable")),
+            kind: UpdateKind::Profile,
+            termination: None,
+            profile: Some(xield::app::ProfileOutcome::Applied),
+        },
+        false,
+    )
+    .unwrap();
+    assert!(!app.busy);
+    assert!(app.snapshot.firewall.is_none());
+    let notice = app.notice.unwrap();
+    assert!(notice.error);
+    assert!(notice.text.contains("applied"));
+    assert!(notice.text.contains("observation unavailable"));
 }

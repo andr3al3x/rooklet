@@ -5,12 +5,21 @@ use crate::model::{Action, Direction, Mutation, NetworkRule, Protocol};
 pub enum ConfirmedAction {
     Firewall(Mutation),
     Terminate(crate::process::TerminationRequest),
+    Profile(Box<crate::profile::Prepared>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Popup {
     Help,
     Inspect(String),
+    Profiles {
+        entries: Vec<String>,
+        selected: usize,
+        loading: bool,
+    },
+    ProfileName {
+        name: String,
+    },
     Confirm {
         title: String,
         body: String,

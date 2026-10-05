@@ -1,8 +1,9 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use xield::{
     app::{App, MouseAction, Popup},
-    backend::Backend,
     model::{Action, Application, Mutation, Snapshot},
     permissions::{IncomingState, Index},
     ui::{self, Theme},
@@ -11,7 +12,7 @@ fn key(app: &mut App, code: KeyCode) -> xield::app::Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))
 }
 fn fixture() -> Snapshot {
-    let mut snapshot = Backend::new(true).unwrap().snapshot().unwrap();
+    let mut snapshot = common::snapshot();
     snapshot.activity.truncate(1);
     let identity = snapshot.activity[0].identities[0].clone();
     let mut helper = identity.clone();
@@ -91,24 +92,6 @@ fn frozen_activity_uses_current_permissions_and_unavailable_never_emits_action()
     );
     assert!(key(&mut app, KeyCode::Char('a')).mutation.is_none());
     assert!(app.popup.is_none());
-}
-#[test]
-fn demo_multi_target_preflight_keeps_every_entry_unchanged_on_stale_target() {
-    let mut backend = Backend::new(true).unwrap();
-    let before = backend.snapshot().unwrap().applications;
-    assert!(
-        backend
-            .mutate(Mutation::Applications {
-                paths: vec![before[0].path.clone(), "/missing/stale".into()],
-                action: Action::Block
-            })
-            .is_err()
-    );
-    let after = backend.snapshot().unwrap().applications;
-    assert_eq!(
-        serde_json::to_value(before).unwrap(),
-        serde_json::to_value(after).unwrap()
-    );
 }
 #[test]
 fn on_disk_bundle_resolution_handles_nested_helpers_aliases_and_unrelated_names() {

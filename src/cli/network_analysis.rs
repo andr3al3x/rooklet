@@ -11,11 +11,11 @@ use xield::{
 
 const SCOPE: &str = "Prediction within Xield's anchor only. Other anchors and existing PF states can affect traffic; this is not a live verdict.";
 
-fn rules(input: &InputRules, demo: bool) -> Result<Vec<NetworkRule>> {
+fn rules(input: &InputRules) -> Result<Vec<NetworkRule>> {
     if input.path.is_some() || input.stdin {
         return input_rules(input, false);
     }
-    let status = network_status(demo)?;
+    let status = network_status()?;
     ensure!(
         status.rules_available,
         "saved rules are unavailable; use sudo -v or supply a JSON rules file/--stdin"
@@ -23,15 +23,15 @@ fn rules(input: &InputRules, demo: bool) -> Result<Vec<NetworkRule>> {
     Ok(status.rules)
 }
 
-pub(super) fn check(input: &InputRules, demo: bool) -> Result<()> {
-    let rules = rules(input, demo)?;
+pub(super) fn check(input: &InputRules) -> Result<()> {
+    let rules = rules(input)?;
     print_json(
         &json!({"scope": SCOPE, "rule_count": rules.len(), "warnings": network::shadow_warnings(&rules)?}),
     )
 }
 
-pub(super) fn explain(input: &InputRules, demo: bool, query: RuleQuery) -> Result<()> {
-    let rules = rules(input, demo)?;
+pub(super) fn explain(input: &InputRules, query: RuleQuery) -> Result<()> {
+    let rules = rules(input)?;
     let explanation = network::explain_rules(&rules, &query)?;
     print_json(&json!({"scope": SCOPE, "query": query, "explanation": explanation}))
 }

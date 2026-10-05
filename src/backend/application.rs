@@ -1,4 +1,4 @@
-//! Application path validation and labels shared by live and demo adapters.
+//! Application path validation and labels for incoming permissions.
 use anyhow::{Context, Result, ensure};
 use std::{collections::HashSet, path::Path, sync::atomic::AtomicBool};
 
@@ -43,14 +43,14 @@ pub fn validate_application_path(value: &str, must_exist: bool) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn validate_application_targets(paths: &[String], must_exist: bool) -> Result<()> {
+pub(super) fn validate_application_targets(paths: &[String]) -> Result<()> {
     ensure!(
         !paths.is_empty() && paths.len() <= 256,
         "application action requires between 1 and 256 registered paths"
     );
     let mut unique = HashSet::new();
     for path in paths {
-        validate_application_path(path, must_exist)
+        validate_application_path(path, true)
             .with_context(|| format!("invalid application target {path:?}"))?;
         ensure!(unique.insert(path), "duplicate application target {path:?}");
     }

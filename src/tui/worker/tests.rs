@@ -1,37 +1,70 @@
 use super::*;
-use xield::model::Setting;
+use xield::{
+    model::{FirewallSettings, Setting},
+    process::TerminationMode,
+};
+
+fn snapshot(stealth: bool) -> Snapshot {
+    Snapshot {
+        firewall: Some(FirewallSettings {
+            stealth,
+            ..FirewallSettings::default()
+        }),
+        ..Snapshot::default()
+    }
+}
+
+fn update(result: Result<Snapshot>) -> Update {
+    Update {
+        result,
+        kind: UpdateKind::Observation,
+        termination: None,
+        profile: None,
+    }
+}
+
+fn worker_with(callback: impl FnMut(Option<Work>) -> Update + Send + 'static) -> Worker {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let worker_cancel = Arc::clone(&cancel);
+    let (commands, work) = mpsc::sync_channel(1);
+    let (responses, updates) = mpsc::sync_channel(1);
+    let thread = thread::spawn(move || observe(work, responses, &worker_cancel, callback));
+    Worker {
+        commands: Some(commands),
+        updates: Some(updates),
+        cancel,
+        thread: Some(thread),
+        in_flight: false,
+    }
+}
+
+fn wait_for(worker: &mut Worker, kind: UpdateKind) -> Update {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(update) = worker
+            .drain()
+            .into_iter()
+            .find(|update| update.kind == kind)
+        {
+            return update;
+        }
+        assert!(Instant::now() < deadline, "operation result was lost");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
 
 #[test]
 fn queued_observation_does_not_drop_mutation_result() {
-    let mut backend = Backend::new(true).unwrap();
     let (responses, updates) = mpsc::sync_channel(1);
-    assert!(publish(
-        &responses,
-        Update {
-            result: backend.snapshot(),
-            kind: UpdateKind::Observation,
-            termination: None,
-        }
-    ));
+    assert!(publish(&responses, update(Ok(snapshot(false)))));
     // Another observation is skipped while the bounded queue is full.
-    assert!(publish(
-        &responses,
-        Update {
-            result: backend.snapshot(),
-            kind: UpdateKind::Observation,
-            termination: None,
-        }
-    ));
-    backend
-        .mutate(Mutation::Setting(Setting::Stealth, true))
-        .unwrap();
+    assert!(publish(&responses, update(Ok(snapshot(false)))));
     let thread = thread::spawn(move || {
         publish(
             &responses,
             Update {
-                result: backend.snapshot(),
                 kind: UpdateKind::Firewall,
-                termination: None,
+                ..update(Ok(snapshot(true)))
             },
         )
     });
@@ -47,9 +80,16 @@ fn queued_observation_does_not_drop_mutation_result() {
 
 #[test]
 fn shutdown_with_pending_work_and_undrained_responses_does_not_deadlock() {
+    let completed = Arc::new(AtomicBool::new(false));
+    let worker_completed = Arc::clone(&completed);
     let (finished, completion) = mpsc::channel();
     let thread = thread::spawn(move || {
-        let mut worker = Worker::start(true).unwrap();
+        let mut worker = worker_with(move |work| {
+            if let Some(Work::Firewall(Mutation::Setting(Setting::Stealth, true))) = work {
+                worker_completed.store(true, Ordering::Relaxed);
+            }
+            update(Ok(snapshot(true)))
+        });
         worker
             .submit(Mutation::Setting(Setting::Stealth, true))
             .unwrap();
@@ -58,42 +98,28 @@ fn shutdown_with_pending_work_and_undrained_responses_does_not_deadlock() {
     });
     completion.recv_timeout(Duration::from_secs(3)).unwrap();
     thread.join().unwrap();
+    assert!(completed.load(Ordering::Relaxed));
 }
 
 #[test]
 fn shutdown_during_observation_finishes_the_accepted_mutation() {
-    let cancel = Arc::new(AtomicBool::new(false));
-    let worker_cancel = Arc::clone(&cancel);
     let completed = Arc::new(AtomicBool::new(false));
     let worker_completed = Arc::clone(&completed);
-    let (commands, work) = mpsc::sync_channel(1);
-    let (responses, updates) = mpsc::sync_channel(1);
     let (started, observing) = mpsc::channel();
     let (release, paused) = mpsc::channel();
-    let thread = thread::spawn(move || {
-        let mut backend = Backend::new(true).unwrap();
-        observe(work, responses, &worker_cancel, |work| {
-            if let Some(work) = work {
-                work.run(&mut backend).unwrap();
-                worker_completed.store(true, Ordering::Relaxed);
-            } else {
-                started.send(()).unwrap();
-                paused.recv_timeout(Duration::from_secs(3)).unwrap();
-            }
-            Update {
-                result: backend.snapshot(),
-                kind: UpdateKind::Observation,
-                termination: None,
-            }
-        });
+    let mut worker = worker_with(move |work| {
+        if let Some(work) = work {
+            assert!(matches!(
+                work,
+                Work::Firewall(Mutation::Setting(Setting::Stealth, true))
+            ));
+            worker_completed.store(true, Ordering::Relaxed);
+        } else {
+            started.send(()).unwrap();
+            paused.recv_timeout(Duration::from_secs(3)).unwrap();
+        }
+        update(Ok(snapshot(true)))
     });
-    let mut worker = Worker {
-        commands: Some(commands),
-        updates: Some(updates),
-        cancel,
-        thread: Some(thread),
-        in_flight: false,
-    };
     observing.recv_timeout(Duration::from_secs(3)).unwrap();
     worker
         .submit(Mutation::Setting(Setting::Stealth, true))
@@ -107,69 +133,107 @@ fn shutdown_during_observation_finishes_the_accepted_mutation() {
 }
 
 #[test]
-fn termination_result_is_retained_and_worker_finishes_on_shutdown() {
-    let mut demo = Backend::new(true).unwrap();
-    let targets = demo.snapshot().unwrap().activity[0].identities.clone();
-    let mut worker = Worker::start(true).unwrap();
+fn termination_report_is_retained_when_observation_fails() {
+    let completed = Arc::new(AtomicBool::new(false));
+    let worker_completed = Arc::clone(&completed);
+    let mut worker = worker_with(move |work| match work {
+        Some(Work::Terminate(request)) => {
+            worker_completed.store(true, Ordering::Relaxed);
+            assert!(request.targets.is_empty());
+            Update {
+                termination: Some(TerminationReport {
+                    attempted: 2,
+                    delivered: vec![201, 204],
+                    failures: Vec::new(),
+                }),
+                ..update(Err(anyhow::anyhow!("observation unavailable")))
+            }
+        }
+        None => update(Ok(snapshot(false))),
+        _ => panic!("unexpected work"),
+    });
     worker
         .terminate(TerminationRequest {
-            targets,
-            mode: xield::process::TerminationMode::Terminate,
+            targets: Vec::new(),
+            mode: TerminationMode::Terminate,
         })
         .unwrap();
     assert!(worker.update_geoip().is_err());
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        if let Some(update) = worker
-            .drain()
-            .into_iter()
-            .find(|update| update.kind == UpdateKind::Terminate)
-        {
-            assert_eq!(update.termination.unwrap().delivered, vec![201, 204]);
-            assert!(
-                update
-                    .result
-                    .unwrap()
-                    .activity
-                    .iter()
-                    .all(|activity| activity.name != "Safari")
-            );
-            assert!(!worker.in_flight);
-            break;
-        }
-        assert!(Instant::now() < deadline, "termination result was lost");
-        thread::sleep(Duration::from_millis(5));
-    }
-    let targets = demo.snapshot().unwrap().activity[1].identities.clone();
+    let result = wait_for(&mut worker, UpdateKind::Terminate);
+    assert_eq!(result.termination.unwrap().delivered, vec![201, 204]);
+    assert!(result.result.is_err());
+    assert!(!worker.in_flight);
+    completed.store(false, Ordering::Relaxed);
     worker
         .terminate(TerminationRequest {
-            targets,
-            mode: xield::process::TerminationMode::ForceKill,
+            targets: Vec::new(),
+            mode: TerminationMode::ForceKill,
         })
         .unwrap();
     drop(worker);
+    assert!(completed.load(Ordering::Relaxed));
 }
 
 #[test]
-fn country_update_result_is_retained_and_completes_without_privileges_in_demo() {
-    let mut worker = Worker::start(true).unwrap();
+fn country_update_result_is_retained_and_clears_pending_work() {
+    let mut worker = worker_with(|work| {
+        assert!(matches!(work, None | Some(Work::GeoIp)));
+        update(Ok(Snapshot {
+            geoip: Some("Validated country database".into()),
+            ..snapshot(false)
+        }))
+    });
     worker.update_geoip().unwrap();
     assert!(worker.update_geoip().is_err());
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        if let Some(update) = worker
-            .drain()
-            .into_iter()
-            .find(|update| update.kind == UpdateKind::GeoIp)
-        {
-            let snapshot = update.result.unwrap();
-            assert!(snapshot.demo);
-            assert!(snapshot.firewall.unwrap().enabled);
-            assert_eq!(snapshot.geoip.as_deref(), Some("Simulated country data"));
-            assert!(!worker.in_flight);
-            break;
+    let result = wait_for(&mut worker, UpdateKind::GeoIp);
+    assert_eq!(
+        result.result.unwrap().geoip.as_deref(),
+        Some("Validated country database")
+    );
+    assert!(!worker.in_flight);
+}
+
+#[test]
+fn idle_shutdown_cancels_observation_work() {
+    let worker = worker_with(|_| update(Ok(snapshot(false))));
+    let cancel = Arc::clone(&worker.cancel);
+    drop(worker);
+    assert!(cancel.load(Ordering::Relaxed));
+}
+
+#[test]
+fn accepted_profile_work_finishes_when_display_closes() {
+    let completed = Arc::new(AtomicBool::new(false));
+    let worker_completed = Arc::clone(&completed);
+    let mut worker = worker_with(move |work| {
+        if let Some(Work::Profile(ProfileOperation::Export(name))) = work {
+            assert_eq!(name, "Home");
+            worker_completed.store(true, Ordering::Relaxed);
         }
-        assert!(Instant::now() < deadline, "country update result was lost");
-        thread::sleep(Duration::from_millis(5));
-    }
+        update(Ok(snapshot(false)))
+    });
+    worker
+        .profile(ProfileOperation::Export("Home".into()))
+        .unwrap();
+    drop(worker);
+    assert!(completed.load(Ordering::Relaxed));
+}
+
+#[test]
+fn profile_response_retains_operation_kind_and_payload() {
+    let mut worker = worker_with(|work| Update {
+        profile: match work {
+            Some(Work::Profile(ProfileOperation::List)) => {
+                Some(ProfileOutcome::Listed(vec!["Home".into()]))
+            }
+            None => None,
+            _ => panic!("unexpected work"),
+        },
+        ..update(Ok(snapshot(false)))
+    });
+    worker.profile(ProfileOperation::List).unwrap();
+    assert!(worker.update_geoip().is_err());
+    let result = wait_for(&mut worker, UpdateKind::Profile);
+    assert!(matches!(result.profile, Some(ProfileOutcome::Listed(names)) if names == ["Home"]));
+    assert!(!worker.in_flight);
 }

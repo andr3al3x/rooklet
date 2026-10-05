@@ -1,20 +1,18 @@
+mod common;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use xield::{
     app::{App, Popup, View, clean},
-    backend::Backend,
     model::*,
     ui::{self, Theme},
 };
-fn demo() -> Snapshot {
-    Backend::new(true).unwrap().snapshot().unwrap()
-}
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 #[test]
 fn selection_tracks_process_identity_after_reordering() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Down));
     let selected = app.selection[0].clone();
     let mut next = app.snapshot.clone();
@@ -24,7 +22,7 @@ fn selection_tracks_process_identity_after_reordering() {
 }
 #[test]
 fn incoming_permission_requires_explicit_confirmation() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.view = View::Applications;
     app.handle(key(KeyCode::Down));
     assert!(app.handle(key(KeyCode::Char('b'))).mutation.is_none());
@@ -41,7 +39,7 @@ fn incoming_permission_requires_explicit_confirmation() {
 }
 #[test]
 fn cancelling_never_emits_a_mutation() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.view = View::Applications;
     app.handle(key(KeyCode::Down));
     app.handle(key(KeyCode::Char('b')));
@@ -51,7 +49,7 @@ fn cancelling_never_emits_a_mutation() {
 }
 #[test]
 fn frozen_activity_keeps_firewall_and_rules_current() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Char(' ')));
     let original = app.snapshot.activity.len();
     let mut next = app.snapshot.clone();
@@ -68,7 +66,7 @@ fn frozen_activity_keeps_firewall_and_rules_current() {
 }
 #[test]
 fn country_search_finds_connections_and_empty_search_recovers() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.filters[0] = "no-such-country".into();
     app.handle(key(KeyCode::Down));
     assert_eq!(app.selected_index(), None);
@@ -91,7 +89,7 @@ fn country_search_finds_connections_and_empty_search_recovers() {
 }
 #[test]
 fn network_editor_is_global_and_validates_before_confirmation() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.view = View::Network;
     app.handle(key(KeyCode::Down));
     app.handle(key(KeyCode::Char('n')));
@@ -107,7 +105,7 @@ fn network_editor_is_global_and_validates_before_confirmation() {
 }
 #[test]
 fn unfreeze_after_failed_poll_never_restores_firewall_health() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Char(' ')));
     app.failed("statistics disconnected".into(), false);
     app.handle(key(KeyCode::Char(' ')));
@@ -117,7 +115,7 @@ fn unfreeze_after_failed_poll_never_restores_firewall_health() {
 fn all_views_dialogs_and_themes_render_at_supported_sizes() {
     for (width, height) in [(140, 40), (100, 30), (80, 24), (50, 17), (20, 5), (1, 1)] {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        let mut app = App::new(demo());
+        let mut app = App::new(common::snapshot());
         for theme in [Theme::Dark, Theme::Light, Theme::Mono] {
             for view in View::ALL {
                 app.view = view;
@@ -136,7 +134,7 @@ fn all_views_dialogs_and_themes_render_at_supported_sizes() {
 #[test]
 fn render_never_claims_outgoing_app_enforcement_or_observed_verdicts() {
     let mut terminal = Terminal::new(TestBackend::new(120, 34)).unwrap();
-    let app = App::new(demo());
+    let app = App::new(common::snapshot());
     terminal
         .draw(|frame| ui::draw(frame, &app, Theme::Dark))
         .unwrap();
@@ -147,7 +145,6 @@ fn render_never_claims_outgoing_app_enforcement_or_observed_verdicts() {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
-    assert!(text.contains("DEMO"));
     assert!(text.contains("Country"));
     assert!(text.contains("↓/s"));
     assert!(!text.contains("DECISION"));
@@ -160,7 +157,7 @@ fn untrusted_labels_cannot_inject_terminal_or_bidi_controls() {
 
 #[test]
 fn grouped_app_selection_and_expansion_survive_helper_pid_changes() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Enter));
     let key = app.selection[0].clone();
     let expanded = app.expanded.clone();
@@ -177,7 +174,7 @@ fn grouped_app_selection_and_expansion_survive_helper_pid_changes() {
 }
 #[test]
 fn editing_a_disabled_rule_preserves_its_disabled_state() {
-    let mut snapshot = demo();
+    let mut snapshot = common::snapshot();
     snapshot.network.rules[0].enabled = false;
     let mut app = App::new(snapshot);
     app.handle(key(KeyCode::Char('3')));
@@ -191,7 +188,7 @@ fn editing_a_disabled_rule_preserves_its_disabled_state() {
 }
 #[test]
 fn search_text_never_triggers_authentication() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Char('/')));
     assert!(!app.handle(key(KeyCode::Char('u'))).authenticate);
     assert_eq!(app.filter(), "u");
@@ -201,7 +198,7 @@ fn search_text_never_triggers_authentication() {
 
 #[test]
 fn country_update_is_explicit_unprivileged_and_serialized() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     assert!(!app.handle(key(KeyCode::Char('g'))).update_geoip);
     app.handle(key(KeyCode::Char('4')));
     let original = app.snapshot.firewall.clone();
@@ -220,16 +217,16 @@ fn country_update_is_explicit_unprivileged_and_serialized() {
     assert_eq!(app.snapshot.firewall, original);
     assert!(app.notice.as_ref().unwrap().error);
     app.handle(key(KeyCode::Char('g')));
-    app.geoip_updated(demo());
+    app.geoip_updated(common::snapshot());
     assert!(!app.busy);
     assert_eq!(app.snapshot.firewall, original);
-    assert!(app.notice.as_ref().unwrap().text.contains("simulated"));
+    assert!(app.notice.as_ref().unwrap().text.contains("updated"));
     assert!(!app.notice.as_ref().unwrap().error);
 }
 
 #[test]
 fn search_and_dialog_keys_cannot_start_a_country_download() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.handle(key(KeyCode::Char('4')));
     app.handle(key(KeyCode::Char('/')));
     assert!(!app.handle(key(KeyCode::Char('g'))).update_geoip);
@@ -243,10 +240,9 @@ fn search_and_dialog_keys_cannot_start_a_country_download() {
 
 #[test]
 fn settings_show_country_provider_age_attribution_and_action_at_eighty_columns() {
-    let mut app = App::new(demo());
+    let mut app = App::new(common::snapshot());
     app.view = View::Settings;
     // Explicit rendering fixture; no live backend or network requests.
-    app.snapshot.demo = false;
     app.snapshot.geoip = Some("DB-IP Lite · 3 days old · CC BY 4.0".into());
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal

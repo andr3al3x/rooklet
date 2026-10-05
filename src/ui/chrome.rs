@@ -12,15 +12,13 @@ use ratatui::{
 
 pub(super) fn header(frame: &mut Frame, app: &App, area: Rect, p: Palette) {
     let columns = Layout::horizontal([Constraint::Min(25), Constraint::Length(18)]).split(area);
-    let (state, color) = if app.snapshot.demo {
-        ("DEMO · no firewall changes".to_string(), p.warn)
-    } else if app.stale() {
-        ("Status stale".into(), p.warn)
+    let (state, color) = if app.stale() {
+        ("Status stale", p.warn)
     } else {
         match &app.snapshot.firewall {
-            Some(s) if s.enabled => ("Incoming firewall on".into(), p.good),
-            Some(_) => ("Incoming firewall off".into(), p.warn),
-            None => ("Firewall unavailable".into(), p.bad),
+            Some(s) if s.enabled => ("Incoming firewall on", p.good),
+            Some(_) => ("Incoming firewall off", p.warn),
+            None => ("Firewall unavailable", p.bad),
         }
     };
     frame.render_widget(

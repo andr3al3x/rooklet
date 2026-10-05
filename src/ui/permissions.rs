@@ -140,7 +140,7 @@ pub(super) fn settings(
                 .unwrap_or_else(|| "not installed; press g to download".into())
         )),
     ];
-    if app.snapshot.geoip.is_some() && !app.snapshot.demo {
+    if app.snapshot.geoip.is_some() {
         text.push(Line::raw("IP geolocation by DB-IP · db-ip.com · CC BY 4.0"));
     }
     for notice in &app.snapshot.notices {

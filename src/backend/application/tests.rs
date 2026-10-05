@@ -104,10 +104,12 @@ fn lexical_normalization_and_target_bounds_are_strict() {
     ] {
         assert!(validate_application_path(path, false).is_err(), "{path}");
     }
-    assert!(validate_application_targets(&[], false).is_err());
-    assert!(validate_application_targets(&vec!["/one".into(); 257], false).is_err());
-    assert!(validate_application_targets(&["/one".into(), "/one".into()], false).is_err());
-    assert!(validate_application_targets(&["/one".into(), "/two".into()], false).is_ok());
+    assert!(validate_application_targets(&[]).is_err());
+    assert!(validate_application_targets(&vec!["/one".into(); 257]).is_err());
+    let directory = tempfile::tempdir().unwrap();
+    let (app, executable) = bundle(directory.path());
+    assert!(validate_application_targets(&[executable.clone(), executable.clone()]).is_err());
+    assert!(validate_application_targets(&[app, executable]).is_ok());
 }
 
 #[cfg(target_os = "macos")]

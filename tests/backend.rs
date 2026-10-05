@@ -7,11 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 use xield::{
-    backend::{
-        Backend, parse_app_blocked, parse_applications, parse_settings, validate_application_path,
-    },
+    backend::{parse_app_blocked, parse_applications, parse_settings, validate_application_path},
     command,
-    model::*,
 };
 
 #[test]
@@ -87,57 +84,14 @@ fn app_verification_matches_the_requested_path() {
     }
     assert!(validate_application_path("/Applications/Example App.app", false).is_ok());
 }
-#[test]
-fn demo_mutations_change_only_explicit_simulated_state() {
-    let mut backend = Backend::new(true).unwrap();
-    let initial = backend.snapshot().unwrap();
-    assert!(initial.demo);
-    backend
-        .mutate(Mutation::Setting(Setting::AllowSigned, false))
-        .unwrap();
-    let state = backend.snapshot().unwrap().firewall.unwrap();
-    assert!(!state.allow_signed && state.allow_signed_app);
-    backend
-        .mutate(Mutation::AddApplication("/Applications/My App.app".into()))
-        .unwrap();
-    backend
-        .mutate(Mutation::Applications {
-            paths: vec!["/Applications/My App.app".into()],
-            action: Action::Block,
-        })
-        .unwrap();
-    assert!(
-        backend
-            .snapshot()
-            .unwrap()
-            .applications
-            .iter()
-            .any(|app| app.name == "My App" && app.blocked)
-    );
-    let before = backend.snapshot().unwrap().applications;
-    assert!(
-        backend
-            .mutate(Mutation::AddApplication("relative".into()))
-            .is_err()
-    );
-    assert_eq!(backend.snapshot().unwrap().applications, before);
-    backend
-        .mutate(Mutation::RemoveApplication(
-            "/Applications/My App.app".into(),
-        ))
-        .unwrap();
-    assert!(
-        !backend
-            .snapshot()
-            .unwrap()
-            .applications
-            .iter()
-            .any(|app| app.name == "My App")
-    );
-}
+#[cfg(target_os = "macos")]
 #[test]
 fn cancelled_backend_rejects_work() {
-    let mut backend = Backend::new(true)
+    use xield::{
+        backend::Backend,
+        model::{Mutation, Setting},
+    };
+    let mut backend = Backend::new()
         .unwrap()
         .with_cancellation(Arc::new(AtomicBool::new(true)));
     assert!(backend.snapshot().is_err());
@@ -222,18 +176,6 @@ fn runner_output_bounds_and_cancellation_kill_descendants() {
     assert!(error.to_string().contains("cancelled"));
     assert!(started.elapsed() < Duration::from_secs(2));
     thread.join().unwrap();
-}
-
-#[test]
-fn demo_network_replacement_rejects_invalid_state_atomically() {
-    let mut backend = Backend::new(true).unwrap();
-    let before = backend.snapshot().unwrap().network.rules;
-    let mut invalid = before.clone();
-    invalid[0].destination = "example.com".into();
-    assert!(backend.mutate(Mutation::NetworkRules(invalid)).is_err());
-    assert_eq!(backend.snapshot().unwrap().network.rules, before);
-    backend.mutate(Mutation::NetworkRules(Vec::new())).unwrap();
-    assert!(backend.snapshot().unwrap().network.rules.is_empty());
 }
 
 #[test]

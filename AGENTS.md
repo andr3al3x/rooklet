@@ -10,7 +10,6 @@ clear about what each backend actually controls.
 - PF controls machine-wide IP/CIDR, destination-port, protocol, direction, and interface rules.
 - `nettop` supplies observed process and peer traffic; observation is not a firewall verdict.
 - Country labels are estimates from the managed DB-IP Country Lite MMDB. Local or unknown addresses stay explicit.
-- Demo mode is explicit, in memory, and must never invoke live mutation commands.
 
 This is a clean break from the former extension architecture. Do not introduce
 Swift code, app bundles, system extensions, signing/provisioning workflows, RPC
@@ -30,15 +29,17 @@ compatibility layers, legacy CLI aliases, or old-schema migrations.
 
 - `src/model.rs`: typed shared data and mutations; strict configuration schemas.
 - `src/main.rs`: minimal binary entry point.
-- `src/cli/`: argument definitions, command dispatch, bounded configuration input, and profiles.
+- `src/cli/`: argument definitions, command dispatch, bounded configuration input, and profile commands.
 - `src/auth.rs` and `src/json.rs`: terminal authentication and CLI output.
 - `src/tui.rs` and `src/tui/`: event routing, terminal lifecycle, and bounded backend worker coordination.
 - `src/app.rs` and `src/app/`: interaction state, selection, filtering, and typed dialogs.
 - `src/ui.rs` and `src/ui/`: view composition, individual views, themes, and modal rendering.
+- `src/profile.rs` and `src/profile/`: shared strict profile preparation, scope review,
+  managed storage, drift checks, and verified application/restoration.
 - `src/presentation.rs`: sanitized display text and traffic formatting.
 - `src/permissions.rs`: verified Activity grouping to exact incoming registrations.
 - `src/backend.rs` and `src/backend/`: backend facade, incoming firewall adapter/parsers,
-  application path validation, live observations, and explicit demo state.
+  application path validation and live observations.
 - `src/command.rs`: bounded subprocess execution, cancellation, and cleanup.
 - `src/activity.rs` and `src/activity/`: observation facade, CSV parser, counters/grouping,
   process identity lookup, and monitor lifecycle.
@@ -48,7 +49,7 @@ compatibility layers, legacy CLI aliases, or old-schema migrations.
   trusted persistence, subprocess adapter, and lifecycle transactions.
 - `src/network/analysis.rs`: pure hypothetical rule matching and conservative single-rule shadowing.
 - `tests/`: behavior and regression checks; fixtures must retain their provenance and licenses.
-- `examples/preview.rs` and `scripts/render-preview.py`: actual terminal-cell visual previews.
+- `tests/visual_preview.rs` and `scripts/render-preview.py`: actual terminal-cell visual previews.
 - `scripts/build-release.sh` and `scripts/package.sh`: explicit macOS target builds and verified archives.
 - `scripts/install.sh` and `scripts/uninstall.sh`: binary-only installation/removal; never change live rules or bypass quarantine.
 
@@ -78,13 +79,13 @@ the operations their callers need.
   Sanitize terminal controls and bidi overrides before rendering.
 - Keep totals and rates distinct, avoid counting both process summaries and their flows, and
   preserve app totals across helper exits. Process grouping must be supported by actual paths.
-- Distinguish unavailable, inactive, stale, and observed state. Never silently substitute demo
-  data or claim enforcement from a successfully loaded ruleset alone.
+- Distinguish unavailable, inactive, stale, and observed state. Never fabricate observations
+  or claim enforcement from a successfully loaded ruleset alone.
 - Country lookups stay offline. Database updates, if added, must follow the provider's license
   and must not send observed endpoint addresses to an external service.
 - Install GeoIP data only through explicit `geoip update` / Settings actions. Validate
   downloads before atomic replacement, retain the previous database on failure,
-  display DB-IP attribution, and keep demo updates free of network and file writes.
+  display DB-IP attribution.
 
 ## Validation
 

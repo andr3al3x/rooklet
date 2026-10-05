@@ -17,10 +17,7 @@ pub(super) struct Live {
 }
 impl Live {
     pub(super) fn new() -> Result<Self> {
-        ensure!(
-            cfg!(target_os = "macos"),
-            "live firewall controls require macOS; use --demo for simulated data"
-        );
+        ensure!(cfg!(target_os = "macos"), "firewall controls require macOS");
         let (mut geoip, mut geoip_error) = match GeoIp::managed() {
             Ok(geoip) => (geoip, None),
             Err(error) => (
