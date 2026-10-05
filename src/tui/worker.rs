@@ -1,5 +1,12 @@
 //! Bounded backend work and observations, with transaction-aware shutdown.
 use anyhow::{Context, Result, ensure};
+use rooklet::{
+    app::{ProfileOperation, ProfileOutcome},
+    backend::Backend,
+    model::{Mutation, Snapshot},
+    process::{TerminationReport, TerminationRequest},
+    profile,
+};
 use std::{
     sync::{
         Arc,
@@ -8,13 +15,6 @@ use std::{
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
-};
-use xield::{
-    app::{ProfileOperation, ProfileOutcome},
-    backend::Backend,
-    model::{Mutation, Snapshot},
-    process::{TerminationReport, TerminationRequest},
-    profile,
 };
 
 pub(super) struct Update {
@@ -110,7 +110,7 @@ impl Worker {
         let (commands, work) = mpsc::sync_channel(1);
         let (responses, updates) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
-            .name("xield-backend".into())
+            .name("rooklet-backend".into())
             .spawn(move || {
                 // Database validation and monitor startup must not block the first TUI frame.
                 let mut backend = match Backend::new() {

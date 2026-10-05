@@ -1,4 +1,4 @@
-//! Pure explanations of Xield's ordered quick rules, independent of live PF state.
+//! Pure explanations of Rooklet's ordered quick rules, independent of live PF state.
 use super::{
     compiler::{destination, valid_interface},
     validate_rules,
@@ -29,7 +29,7 @@ pub enum QueryField {
 }
 
 /// Positions refer to the original ordered rule list and are one-based.
-/// This explains only Xield rule matching, never effective machine enforcement.
+/// This explains only Rooklet rule matching, never effective machine enforcement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum RuleExplanation {

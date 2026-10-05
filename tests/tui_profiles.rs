@@ -2,7 +2,7 @@ mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
-use xield::{
+use rooklet::{
     app::{App, Effect, Popup, ProfileOperation, ProfileOutcome},
     model::Profile,
     profile,

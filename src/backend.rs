@@ -66,7 +66,7 @@ impl Backend {
         );
         crate::network::validate_rules(rules)?;
         let executable = std::env::current_exe()
-            .context("unable to locate xield executable")?
+            .context("unable to locate rooklet executable")?
             .canonicalize()?;
         command::run_with_timeout(
             &executable,
@@ -85,7 +85,7 @@ impl Backend {
             Mutation::NetworkRules(rules) => {
                 crate::network::validate_rules(&rules)?;
                 let executable = std::env::current_exe()
-                    .context("unable to locate xield executable")?
+                    .context("unable to locate rooklet executable")?
                     .canonicalize()?;
                 let args = vec!["network".into(), "apply".into(), "--stdin".into()];
                 command::run_transaction(

@@ -23,7 +23,7 @@ pub(super) fn header(frame: &mut Frame, app: &App, area: Rect, p: Palette) {
     };
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("XIELD", p.accent()),
+            Span::styled("ROOKLET", p.accent()),
             Span::raw("   "),
             Span::styled(state, Style::default().fg(color)),
         ])),

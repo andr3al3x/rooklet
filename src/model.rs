@@ -129,7 +129,7 @@ pub struct Profile {
 impl Profile {
     pub fn from_snapshot(snapshot: &Snapshot) -> Self {
         Self {
-            format: "xield-profile".into(),
+            format: "rooklet-profile".into(),
             version: 1,
             firewall: snapshot.firewall.clone(),
             applications: snapshot.applications.clone(),

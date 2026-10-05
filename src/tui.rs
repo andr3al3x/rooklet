@@ -5,14 +5,14 @@ mod worker;
 use crate::auth::authenticate;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
-use std::time::Duration;
-use terminal::TerminalSession;
-use worker::{Update, UpdateKind, Worker};
-use xield::{
+use rooklet::{
     app::{App, ProfileOperation},
     model::Snapshot,
     ui::{self, Theme},
 };
+use std::time::Duration;
+use terminal::TerminalSession;
+use worker::{Update, UpdateKind, Worker};
 
 pub(crate) fn run(theme: Theme) -> Result<()> {
     let mut worker = Worker::start()?;

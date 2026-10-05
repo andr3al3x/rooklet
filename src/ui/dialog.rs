@@ -59,7 +59,7 @@ pub(super) fn draw(
         ),
         Popup::ProfileName { .. } => ("EXPORT CURRENT FIREWALL SCOPES", 13),
         Popup::Network { .. } => ("MACHINE-WIDE NETWORK RULE", 19),
-        Popup::Explain { .. } => ("EXPLAIN XIELD RULES · PREDICTION ONLY", 23),
+        Popup::Explain { .. } => ("EXPLAIN ROOKLET RULES · PREDICTION ONLY", 23),
     };
     let rect = centered(area, 76, height);
     frame.render_widget(Clear, rect);

@@ -2,7 +2,7 @@
 
 ## Product and scope
 
-Xield is a standalone Rust terminal application for macOS firewall management and
+Rooklet is a standalone Rust terminal application for macOS firewall management and
 local network activity monitoring. Keep the application slim, keyboard-first, and
 clear about what each backend actually controls.
 
@@ -69,7 +69,7 @@ the operations their callers need.
 - Validate the entire proposed configuration before mutation. Read back settings after changes.
   Report partial failures and failed restoration explicitly; do not claim atomicity across ALF operations.
 - Preserve unrelated PF rules, anchors, states, and enable references. Never globally flush PF
-  or disable it to remove Xield's rules. Respect root ownership, symlink checks, and configuration drift.
+  or disable it to remove Rooklet's rules. Respect root ownership, symlink checks, and configuration drift.
 - Do not cancel an authorized PF transaction halfway through when the user quits the TUI.
 - Process termination requires a confirmation for the exact captured targets and signal.
   Recheck ownership and identity, protect root-owned processes, self and ancestors,

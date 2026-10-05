@@ -1,5 +1,5 @@
 use super::*;
-use xield::process::{SignalFailure, TerminationReport};
+use rooklet::process::{SignalFailure, TerminationReport};
 fn update(result: Result<Snapshot>, partial: bool) -> Update {
     Update {
         result,
@@ -30,7 +30,7 @@ fn quitting_surfaces_partial_termination_failures() {
 #[test]
 fn refresh_error_retains_signal_report_and_invalidates_cached_health() {
     let mut app = App::new(Snapshot {
-        firewall: Some(xield::model::FirewallSettings::default()),
+        firewall: Some(rooklet::model::FirewallSettings::default()),
         ..Default::default()
     });
     app.busy = true;
@@ -63,7 +63,7 @@ fn quitting_surfaces_post_signal_observation_failure() {
 #[test]
 fn profile_result_preserves_completion_when_refresh_fails() {
     let mut app = App::new(Snapshot {
-        firewall: Some(xield::model::FirewallSettings::default()),
+        firewall: Some(rooklet::model::FirewallSettings::default()),
         ..Default::default()
     });
     app.busy = true;
@@ -75,7 +75,7 @@ fn profile_result_preserves_completion_when_refresh_fails() {
             operation_error: None,
             kind: UpdateKind::Profile,
             termination: None,
-            profile: Some(xield::app::ProfileOutcome::Applied),
+            profile: Some(rooklet::app::ProfileOutcome::Applied),
         },
         false,
     )
@@ -95,7 +95,7 @@ fn partial_mutation_reports_failure_with_verified_current_state() {
     let mut app = App::new(Snapshot::default());
     app.busy = true;
     let snapshot = Snapshot {
-        firewall: Some(xield::model::FirewallSettings {
+        firewall: Some(rooklet::model::FirewallSettings {
             stealth: true,
             ..Default::default()
         }),
@@ -123,7 +123,7 @@ fn partial_mutation_and_failed_refresh_invalidate_all_cached_scopes() {
     let mut app = App::new(Snapshot {
         firewall: Some(Default::default()),
         applications_available: true,
-        network: xield::model::NetworkStatus {
+        network: rooklet::model::NetworkStatus {
             rules_available: true,
             configured: true,
             applied: true,

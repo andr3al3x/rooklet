@@ -17,16 +17,16 @@ release_version=${package_id##*#}
 release_version=${release_version##*@}
 case "$release_version" in ''|*[!0-9A-Za-z.+-]*) printf '%s\n' 'invalid release version' >&2; exit 1 ;; esac
 release_arch=$(/usr/bin/lipo -archs "$binary_path")
-package_name="xield-$release_version-macos-$release_arch"
+package_name="rooklet-$release_version-macos-$release_arch"
 archive_name="$package_name.tar.gz"
 output_dir="$project_dir/target/package"
 mkdir -p "$output_dir"
-staging_dir=$(mktemp -d "$output_dir/.xield-package.XXXXXX")
+staging_dir=$(mktemp -d "$output_dir/.rooklet-package.XXXXXX")
 trap 'rm -rf "$staging_dir"' EXIT
 trap 'exit 1' HUP INT TERM
 package_dir="$staging_dir/$package_name"
 mkdir -p "$package_dir"
-cp "$binary_path" "$package_dir/xield"
+cp "$binary_path" "$package_dir/rooklet"
 cp "$project_dir/LICENSE" "$package_dir/LICENSE"
 cp "$project_dir/docs/install.md" "$package_dir/README.md"
 cp "$project_dir/scripts/install.sh" "$package_dir/install.sh"

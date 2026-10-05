@@ -1,5 +1,5 @@
 //! Static model fixtures for interaction tests; never invoke system adapters.
-use xield::model::{
+use rooklet::model::{
     Action, Application, Connection, Country, Direction, FirewallSettings, NetworkRule,
     NetworkStatus, ProcessActivity, Protocol, Snapshot,
 };
@@ -61,7 +61,7 @@ pub fn snapshot() -> Snapshot {
             pid,
             name: name.into(),
             path: Some(path.into()),
-            identities: vec![xield::process::ProcessIdentity {
+            identities: vec![rooklet::process::ProcessIdentity {
                 pid,
                 uid: 1000,
                 parent_pid: 1,

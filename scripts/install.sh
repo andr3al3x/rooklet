@@ -1,14 +1,14 @@
 #!/bin/sh
-# Also distributed as install.sh beside the packaged xield executable.
+# Also distributed as install.sh beside the packaged rooklet executable.
 set -eu
 
-fail() { printf '%s\n' "xield: $*" >&2; exit 1; }
+fail() { printf '%s\n' "rooklet: $*" >&2; exit 1; }
 usage() {
     printf '%s\n' 'Usage: install.sh [--bin-dir DIR] [--binary FILE]' \
         'Default destination: $HOME/.local/bin. No sudo or shell configuration changes.'
 }
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-binary_path="$script_dir/xield"
+binary_path="$script_dir/rooklet"
 bin_dir=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -24,7 +24,7 @@ done
 if [ -z "$bin_dir" ]; then
     bin_dir="${HOME:?HOME must be set for the default installation directory}/.local/bin"
 fi
-[ "$(/usr/bin/uname -s)" = Darwin ] || fail 'Xield requires macOS'
+[ "$(/usr/bin/uname -s)" = Darwin ] || fail 'Rooklet requires macOS'
 case "$bin_dir" in /*) ;; *) fail '--bin-dir must be an absolute path' ;; esac
 case "$binary_path" in /*) ;; *) binary_path="$PWD/$binary_path" ;; esac
 [ -f "$binary_path" ] && [ -x "$binary_path" ] || fail "missing executable: $binary_path; use the release archive or make install"
@@ -46,11 +46,11 @@ case " $compatible_arches " in
     *" $binary_arch "*) ;;
     *) fail "binary architecture ($binary_arch) does not match this Mac (compatible: $compatible_arches)" ;;
 esac
-destination="$bin_dir/xield"
+destination="$bin_dir/rooklet"
 [ ! -L "$destination" ] || fail "refusing to replace a symlink: $destination"
 [ ! -e "$destination" ] || [ -f "$destination" ] || fail "destination is not a regular file: $destination"
 mkdir -p "$bin_dir" || fail "cannot create $bin_dir; choose a writable --bin-dir"
-staged_binary=$(mktemp "$bin_dir/.xield-install.XXXXXX") || fail "cannot write $bin_dir; choose a writable --bin-dir"
+staged_binary=$(mktemp "$bin_dir/.rooklet-install.XXXXXX") || fail "cannot write $bin_dir; choose a writable --bin-dir"
 trap 'rm -f "$staged_binary"' EXIT
 trap 'exit 1' HUP INT TERM
 # Preserve extended attributes, including quarantine; never bypass Gatekeeper.

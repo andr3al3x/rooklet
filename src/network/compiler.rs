@@ -13,12 +13,12 @@ pub fn validate_rules(rules: &[NetworkRule]) -> Result<()> {
     for rule in rules {
         ensure!(
             !rule.id.is_empty()
-                && rule.id.len() <= 64
+                && rule.id.len() <= 55
                 && rule
                     .id
                     .bytes()
                     .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c)),
-            "Rule ID must contain only letters, digits, underscores or hyphens (1–64 characters)"
+            "Rule ID must contain only letters, digits, underscores or hyphens (1–55 characters, fitting PF's 63-byte label limit)"
         );
         ensure!(ids.insert(&rule.id), "Duplicate rule ID: {}", rule.id);
         ensure!(
@@ -80,7 +80,7 @@ pub(super) fn destination(value: &str) -> Result<Option<IpNet>> {
 pub fn compile_rules(rules: &[NetworkRule]) -> Result<String> {
     validate_rules(rules)?;
     let mut output = String::from(
-        "# Xield network rules: ordered, first match wins. Existing PF states are retained.\n",
+        "# Rooklet network rules: ordered, first match wins. Existing PF states are retained.\n",
     );
     for rule in rules.iter().filter(|rule| rule.enabled) {
         let network = destination(&rule.destination)?;
@@ -125,7 +125,7 @@ pub fn compile_rules(rules: &[NetworkRule]) -> Result<String> {
                 if rule.action == Action::Allow {
                     output.push_str(" keep state");
                 }
-                output.push_str(&format!(" label \"xield_{}\"\n", rule.id));
+                output.push_str(&format!(" label \"rooklet_{}\"\n", rule.id));
             }
         }
     }

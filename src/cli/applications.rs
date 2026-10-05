@@ -1,6 +1,6 @@
 //! Resolve CLI input to exact ALF registrations before authentication.
 use anyhow::{Result, ensure};
-use xield::{
+use rooklet::{
     backend::{Backend, registration_path, validate_application_path},
     model::{Application, Mutation},
 };

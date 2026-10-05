@@ -1,4 +1,4 @@
-use xield::{
+use rooklet::{
     model::{Action, Direction, NetworkRule, Protocol},
     network::{compile_rules, validate_rules},
 };
@@ -19,8 +19,8 @@ fn rule() -> NetworkRule {
 #[test]
 fn cidr_is_canonical_and_both_directions_match_the_remote_peer() {
     let compiled = compile_rules(&[rule()]).unwrap();
-    assert!(compiled.contains("block drop in quick on en0 inet proto tcp from 192.0.2.0/24 to any port 443 label \"xield_first-rule\""));
-    assert!(compiled.contains("block drop out quick on en0 inet proto tcp from any to 192.0.2.0/24 port 443 label \"xield_first-rule\""));
+    assert!(compiled.contains("block drop in quick on en0 inet proto tcp from 192.0.2.0/24 to any port 443 label \"rooklet_first-rule\""));
+    assert!(compiled.contains("block drop out quick on en0 inet proto tcp from any to 192.0.2.0/24 port 443 label \"rooklet_first-rule\""));
 }
 #[test]
 fn ipv6_and_any_are_explicit_and_disabled_rules_are_omitted() {
@@ -51,7 +51,9 @@ fn rule_order_is_stable_and_names_never_enter_pf_source() {
     second.action = Action::Allow;
     let compiled = compile_rules(&[first, second]).unwrap();
     assert!(!compiled.contains("quote"));
-    assert!(compiled.find("xield_first-rule").unwrap() < compiled.find("xield_second").unwrap());
+    assert!(
+        compiled.find("rooklet_first-rule").unwrap() < compiled.find("rooklet_second").unwrap()
+    );
     assert!(compiled.lines().skip(1).all(|l| l.contains(" quick ")));
 }
 #[test]
@@ -88,6 +90,21 @@ fn malicious_fields_and_invalid_ports_are_rejected_even_when_disabled() {
     assert!(validate_rules(&[rule(), rule()]).is_err());
 }
 
+#[test]
+fn rule_id_boundary_keeps_namespaced_labels_within_pf_limit() {
+    let mut boundary = rule();
+    boundary.id = "a".repeat(55);
+    validate_rules(&[boundary.clone()]).unwrap();
+    let source = compile_rules(&[boundary.clone()]).unwrap();
+    assert!(source.contains(&format!("label \"rooklet_{}\"", boundary.id)));
+    assert_eq!(format!("rooklet_{}", boundary.id).len(), 63);
+    boundary.id.push('a');
+    boundary.enabled = false;
+    let error = validate_rules(&[boundary.clone()]).unwrap_err();
+    assert!(error.to_string().contains("1–55 characters"));
+    assert!(compile_rules(&[boundary]).is_err());
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_pf_parser_accepts_rule_combinations_without_loading_them() {
@@ -114,16 +131,21 @@ fn macos_pf_parser_accepts_rule_combinations_without_loading_them() {
             }
         }
     }
+    let mut boundary = rule();
+    boundary.id = "a".repeat(55);
+    boundary.interface = None;
+    rules.push(boundary);
     let source = compile_rules(&rules).unwrap();
     // -n only parses; this test never loads PF rules, enables PF, or uses sudo.
-    let parsed = xield::command::run(
+    let parsed = rooklet::command::run(
         Path::new("/sbin/pfctl"),
-        &["-n", "-v", "-a", "xield", "-f", "-"].map(String::from),
+        &["-n", "-v", "-a", "rooklet", "-f", "-"].map(String::from),
         Some(source.as_bytes()),
         false,
         &AtomicBool::new(false),
     )
     .unwrap();
-    assert!(parsed.contains("xield_matrix_0"));
-    assert!(parsed.contains("xield_matrix_53"));
+    assert!(parsed.contains("rooklet_matrix_0"));
+    assert!(parsed.contains("rooklet_matrix_53"));
+    assert!(parsed.contains(&format!("rooklet_{}", "a".repeat(55))));
 }

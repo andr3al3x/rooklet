@@ -29,7 +29,7 @@ fn directory() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("HOME is unavailable")?;
     let home = PathBuf::from(home);
     ensure!(home.is_absolute(), "HOME must be an absolute path");
-    Ok(home.join("Library/Application Support/xield/profiles"))
+    Ok(home.join("Library/Application Support/rooklet/profiles"))
 }
 fn validate_name(name: &str) -> Result<()> {
     ensure!(
@@ -302,7 +302,7 @@ mod tests {
     use std::os::unix::fs::{PermissionsExt, symlink};
     fn profile() -> Profile {
         Profile {
-            format: "xield-profile".into(),
+            format: "rooklet-profile".into(),
             version: 1,
             firewall: Some(Default::default()),
             applications: vec![],
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(list_at(&directory).unwrap(), vec!["Work profile"]);
         assert_eq!(
             load_at(&directory, "Work profile").unwrap().format,
-            "xield-profile"
+            "rooklet-profile"
         );
         assert!(save_at(&directory, "Work profile", &profile()).is_err());
         assert_eq!(

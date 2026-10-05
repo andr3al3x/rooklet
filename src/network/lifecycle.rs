@@ -43,7 +43,7 @@ pub fn status() -> NetworkStatus {
             .lines()
             .any(|line| line.trim().starts_with("Status: Enabled"));
         let parent = run(&["-sr"], None)?;
-        let actual = normalized_rules(&run(&["-a", "xield", "-sr"], None)?);
+        let actual = normalized_rules(&run(&["-a", "rooklet", "-sr"], None)?);
         status.applied = status.configured
             && status.enabled
             && parent_matches_managed_config(&parent)
@@ -51,11 +51,11 @@ pub fn status() -> NetworkStatus {
             && state.active
             && state.loaded_rules.as_deref() == Some(actual.as_str());
         status.message = Some(if status.applied {
-            "PF is enabled, the parent references Xield, and its loaded rules match the saved snapshot. Existing states and other PF anchors may affect traffic; this is not proof of enforcement. Rules are not automatically reapplied after reboot.".into()
+            "PF is enabled, the parent references Rooklet, and its loaded rules match the saved snapshot. Existing states and other PF anchors may affect traffic; this is not proof of enforcement. Rules are not automatically reapplied after reboot.".into()
         } else if state.active {
-            "Saved Xield rules are not confirmed active: PF, the parent rules, the persistent anchor file, or the loaded rules differ. Apply again after checking PF. Existing states are retained.".into()
+            "Saved Rooklet rules are not confirmed active: PF, the parent rules, the persistent anchor file, or the loaded rules differ. Apply again after checking PF. Existing states are retained.".into()
         } else {
-            "Xield rules are inactive. Other PF users may keep PF enabled. Existing states are retained.".into()
+            "Rooklet rules are inactive. Other PF users may keep PF enabled. Existing states are retained.".into()
         });
         Ok(())
     })();
@@ -86,7 +86,7 @@ fn setup_inner(rules: &[NetworkRule]) -> Result<()> {
     } else {
         false
     };
-    let live_anchor = normalized_rules(&run(&["-a", "xield", "-sr"], None)?);
+    let live_anchor = normalized_rules(&run(&["-a", "rooklet", "-sr"], None)?);
     if !setup_needs_reload(
         configured(&original),
         parent_referenced,
@@ -110,8 +110,8 @@ fn setup_inner(rules: &[NetworkRule]) -> Result<()> {
         trusted(Path::new(ANCHOR_FILE), false)?;
         let previous = bounded_read(Path::new(ANCHOR_FILE))?;
         ensure!(
-            previous.starts_with("# Xield network rules:"),
-            "An unmanaged /etc/pf.anchors/xield exists; refusing to overwrite it"
+            previous.starts_with("# Rooklet network rules:"),
+            "An unmanaged /etc/pf.anchors/rooklet exists; refusing to overwrite it"
         );
         Some(previous)
     } else {
@@ -178,7 +178,7 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
         prior.enable_token = None;
         save_state(&prior)?;
     }
-    let previous_live = normalized_rules(&run(&["-a", "xield", "-sr"], None)?);
+    let previous_live = normalized_rules(&run(&["-a", "rooklet", "-sr"], None)?);
     // Record the new ownership token before loading any rules, so a later failure can release it.
     let mut next = prior.clone();
     if next.enable_token.is_none() {
@@ -197,7 +197,7 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
         load_anchor(&compiled)?;
         next.rules = rules.to_vec();
         next.active = true;
-        let actual = normalized_rules(&run(&["-a", "xield", "-sr"], None)?);
+        let actual = normalized_rules(&run(&["-a", "rooklet", "-sr"], None)?);
         ensure!(
             actual == expected,
             "PF loaded rules differ from the validated preview; refusing to record them as applied"
@@ -216,7 +216,7 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
                 .context("Apply failed and PF ownership release failed; token remains recorded")?;
         }
         save_state(&prior)?;
-        return Err(error.context("Applying Xield rules failed; previous anchor restored"));
+        return Err(error.context("Applying Rooklet rules failed; previous anchor restored"));
     }
     Ok(())
 }
@@ -229,14 +229,14 @@ pub fn disable() -> Result<()> {
 fn disable_inner() -> Result<()> {
     prepare_state()?;
     let mut state = read_state()?;
-    // An empty anchor clears only Xield rules. Never flush states or disable global PF.
+    // An empty anchor clears only Rooklet rules. Never flush states or disable global PF.
     load_anchor("")?;
     // A later manual root reload must not reactivate disabled rules.
     if Path::new(ANCHOR_FILE).exists() {
         trusted(Path::new(ANCHOR_FILE), false)?;
         ensure!(
-            bounded_read(Path::new(ANCHOR_FILE))?.starts_with("# Xield network rules:"),
-            "Xield's anchor file was replaced; live anchor cleared but persistent file retained"
+            bounded_read(Path::new(ANCHOR_FILE))?.starts_with("# Rooklet network rules:"),
+            "Rooklet's anchor file was replaced; live anchor cleared but persistent file retained"
         );
         atomic_write(
             Path::new(ANCHOR_FILE),
@@ -249,7 +249,7 @@ fn disable_inner() -> Result<()> {
     save_state(&state)?;
     if let Some(token) = state.enable_token.clone() {
         if token_is_live(&token)? {
-            run(&["-X", &token], None).context("Xield anchor cleared, but releasing its PF reference failed; ownership token retained for retry")?;
+            run(&["-X", &token], None).context("Rooklet anchor cleared, but releasing its PF reference failed; ownership token retained for retry")?;
         }
         state.enable_token = None;
         save_state(&state)?;
@@ -278,7 +278,7 @@ fn remove_inner() -> Result<()> {
     let updated = patch_config(&original, false)?;
     ensure!(
         configured(&original),
-        "Xield's managed parent anchor is absent; no root configuration changes made"
+        "Rooklet's managed parent anchor is absent; no root configuration changes made"
     );
     check_parent_rules()?;
     trusted_parents(Path::new("/etc/pf.anchors/com.apple"))?;
@@ -290,7 +290,7 @@ fn remove_inner() -> Result<()> {
     if let Err(error) = run(&["-f", CONFIG], None) {
         atomic_write(Path::new(CONFIG), original.as_bytes(), config_mode)?;
         let rollback = run(&["-f", CONFIG], None);
-        return Err(error.context(format!("Removal reload failed; parent config restored (backup: {}). Xield remains disabled. Runtime restore: {:?}", backup.display(), rollback.err())));
+        return Err(error.context(format!("Removal reload failed; parent config restored (backup: {}). Rooklet remains disabled. Runtime restore: {:?}", backup.display(), rollback.err())));
     }
     trusted(Path::new(ANCHOR_FILE), false)?;
     fs::remove_file(ANCHOR_FILE)?;
@@ -308,14 +308,14 @@ mod tests {
         let source = compile_rules(&[]).unwrap();
         assert!(persistent_rules_match(&state, &source).unwrap());
         assert!(!persistent_rules_match(&state, "pass all\n").unwrap());
-        let parent = "anchor \"com.apple/*\" all\nanchor \"xield\" all\n";
+        let parent = "anchor \"com.apple/*\" all\nanchor \"rooklet\" all\n";
         assert!(parent_matches_managed_config(parent));
         assert!(!parent_matches_managed_config(&format!(
             "pass quick all\n{parent}"
         )));
         assert!(!parent_matches_managed_config(
-            "anchor \"xield\" all\nanchor \"com.apple/*\" all\n"
+            "anchor \"rooklet\" all\nanchor \"com.apple/*\" all\n"
         ));
-        assert!(!parent_matches_managed_config("anchor \"xield\" all"));
+        assert!(!parent_matches_managed_config("anchor \"rooklet\" all"));
     }
 }

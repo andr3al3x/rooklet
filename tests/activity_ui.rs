@@ -2,7 +2,7 @@ mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
-use xield::{
+use rooklet::{
     app::{App, Popup, process_key},
     model::Application,
     ui::{self, Theme},

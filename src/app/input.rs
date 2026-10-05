@@ -141,7 +141,7 @@ impl App {
                         true,
                     );
                 } else if !self.snapshot.network.configured {
-                    self.notify("Set up PF first: sudo xield network setup".into(), true);
+                    self.notify("Set up PF first: sudo rooklet network setup".into(), true);
                 } else {
                     let draft = if self.view == View::Activity {
                         let rows = self.activity_rows();

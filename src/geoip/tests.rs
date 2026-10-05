@@ -43,7 +43,7 @@ fn archive(bytes: &[u8]) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 fn managed_path(home: &Path) -> PathBuf {
-    home.join("Library/Application Support/xield/geoip/Country.mmdb")
+    home.join("Library/Application Support/rooklet/geoip/Country.mmdb")
 }
 fn install_fixture(path: &Path) {
     let bytes = provider_fixture();

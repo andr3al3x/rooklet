@@ -14,8 +14,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const STATE_DIR: &str = "/Library/Application Support/Xield";
-pub(super) const STATE_FILE: &str = "/Library/Application Support/Xield/network.json";
+const STATE_DIR: &str = "/Library/Application Support/Rooklet";
+pub(super) const STATE_FILE: &str = "/Library/Application Support/Rooklet/network.json";
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,7 +102,7 @@ pub(super) fn atomic_write(path: &Path, data: &[u8], mode: u32) -> Result<()> {
         trusted(path, false)?;
     }
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let temporary = path.with_file_name(format!(".xield-{}-{nonce}.tmp", std::process::id()));
+    let temporary = path.with_file_name(format!(".rooklet-{}-{nonce}.tmp", std::process::id()));
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -160,7 +160,7 @@ pub(super) fn mutation_lock() -> Result<fs::File> {
     trusted(&path, false)?;
     ensure!(
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-        "Another Xield network change is in progress; retry after it completes"
+        "Another Rooklet network change is in progress; retry after it completes"
     );
     Ok(lock)
 }
@@ -173,7 +173,7 @@ pub(super) fn read_state() -> Result<State> {
             trusted_parents(path)?;
             trusted(path, false)?;
             let state: State = serde_json::from_str(&bounded_read(path)?)
-                .context("Invalid Xield network state")?;
+                .context("Invalid Rooklet network state")?;
             validate_rules(&state.rules)?;
             if let Some(token) = &state.enable_token {
                 ensure!(valid_token(token), "Invalid stored PF enable token");
@@ -192,7 +192,7 @@ pub(super) fn save_state(state: &State) -> Result<()> {
 
 pub(super) fn backup_config(source: &str) -> Result<PathBuf> {
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let path = PathBuf::from(format!("{CONFIG}.xield-backup-{timestamp}"));
+    let path = PathBuf::from(format!("{CONFIG}.rooklet-backup-{timestamp}"));
     atomic_write(&path, source.as_bytes(), 0o600)?;
     Ok(path)
 }

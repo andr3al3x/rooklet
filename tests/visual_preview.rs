@@ -7,14 +7,14 @@ use ratatui::{
     backend::TestBackend,
     style::{Color, Modifier},
 };
-use serde_json::json;
-use std::path::PathBuf;
-use xield::{
+use rooklet::{
     app::{App, ProfileOutcome, View},
     model::{Profile, Snapshot},
     profile,
     ui::{self, Theme},
 };
+use serde_json::json;
+use std::path::PathBuf;
 
 fn color(color: Color) -> String {
     match color {

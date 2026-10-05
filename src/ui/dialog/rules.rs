@@ -34,7 +34,7 @@ pub(super) fn explain(
     frame.render_widget(
         Paragraph::new(format!(
             concat!(
-                "Xield anchor prediction; not a live verdict.\n{}\n\n",
+                "Rooklet anchor prediction; not a live verdict.\n{}\n\n",
                 "Port: local for inbound, remote for outbound. Blank fields stay unknown.\n",
                 "Other anchors and existing PF states can affect traffic.\n",
                 "Tab / ↑↓ fields · ←→ choices · type edits"
@@ -79,7 +79,7 @@ fn explanation(app: &App, draft: &RuleProbe) -> String {
             )
         }
         Ok(RuleExplanation::NoMatch) => {
-            "No enabled Xield rule matches; this does not imply allow.".into()
+            "No enabled Rooklet rule matches; this does not imply allow.".into()
         }
         Err(error) => clean(&error.to_string()),
     }

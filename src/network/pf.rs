@@ -66,13 +66,13 @@ pub(super) fn token_is_live(token: &str) -> Result<bool> {
 }
 pub(super) fn validate_pf(source: &str) -> Result<String> {
     run(
-        &["-n", "-v", "-a", "xield", "-f", "-"],
+        &["-n", "-v", "-a", "rooklet", "-f", "-"],
         Some(source.as_bytes()),
     )
     .map(|output| normalized_rules(&output))
 }
 pub(super) fn load_anchor(source: &str) -> Result<()> {
-    run(&["-a", "xield", "-f", "-"], Some(source.as_bytes())).map(|_| ())
+    run(&["-a", "rooklet", "-f", "-"], Some(source.as_bytes())).map(|_| ())
 }
 pub(super) fn verify_interfaces(rules: &[NetworkRule]) -> Result<()> {
     for rule in rules.iter().filter(|r| r.enabled) {

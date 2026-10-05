@@ -2,7 +2,7 @@
 # Build and locate one verified macOS release binary, independent of Cargo defaults.
 set -eu
 
-fail() { printf '%s\n' "xield: $*" >&2; exit 1; }
+fail() { printf '%s\n' "rooklet: $*" >&2; exit 1; }
 usage() { printf '%s\n' 'Usage: build-release.sh [--target aarch64-apple-darwin|x86_64-apple-darwin]'; }
 release_target=''
 while [ "$#" -gt 0 ]; do
@@ -28,7 +28,7 @@ esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cargo build --manifest-path "$project_dir/Cargo.toml" --target-dir "$project_dir/target" \
     --target "$release_target" --release --locked
-binary_path="$project_dir/target/$release_target/release/xield"
+binary_path="$project_dir/target/$release_target/release/rooklet"
 [ -f "$binary_path" ] && [ -x "$binary_path" ] || fail 'release executable is missing'
 actual_arch=$(/usr/bin/lipo -archs "$binary_path")
 [ "$actual_arch" = "$expected_arch" ] || fail "expected $expected_arch, found $actual_arch"

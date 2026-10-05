@@ -42,7 +42,7 @@ pub(super) fn managed_path() -> Result<PathBuf> {
     let home = home
         .canonicalize()
         .context("home directory is unavailable")?;
-    Ok(home.join("Library/Application Support/xield/geoip/Country.mmdb"))
+    Ok(home.join("Library/Application Support/rooklet/geoip/Country.mmdb"))
 }
 fn check_parents(path: &Path, create: bool) -> Result<()> {
     // Only create managed descendants; the user's home must already exist.
@@ -53,7 +53,7 @@ fn check_parents(path: &Path, create: bool) -> Result<()> {
         .context("invalid managed database location")?;
     ensure!(home.is_dir(), "home directory is unavailable");
     let mut current = home.to_path_buf();
-    for name in ["Library", "Application Support", "xield", "geoip"] {
+    for name in ["Library", "Application Support", "rooklet", "geoip"] {
         current.push(name);
         match fs::symlink_metadata(&current) {
             Ok(metadata) => ensure!(

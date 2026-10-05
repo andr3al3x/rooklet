@@ -2,7 +2,7 @@ mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
-use xield::{
+use rooklet::{
     app::{ActivitySort, App, MouseAction, Popup, View},
     model::{Action, Direction, Mutation, NetworkRule, Protocol},
     ui::{self, HitMap, Theme},
@@ -11,7 +11,7 @@ use xield::{
 fn fixture_app() -> App {
     App::new(common::snapshot())
 }
-fn key(app: &mut App, code: KeyCode) -> xield::app::Effect {
+fn key(app: &mut App, code: KeyCode) -> rooklet::app::Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))
 }
 fn render(app: &App, width: u16, height: u16) -> (HitMap, Buffer) {
@@ -39,7 +39,7 @@ fn text(buffer: &Buffer) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-fn click(app: &mut App, label: &str, width: u16, height: u16) -> xield::app::Effect {
+fn click(app: &mut App, label: &str, width: u16, height: u16) -> rooklet::app::Effect {
     let (hits, buffer) = render(app, width, height);
     for y in 0..height {
         for x in 0..width {

@@ -1,9 +1,9 @@
+use rooklet::model::{Action, Direction, NetworkRule, Protocol};
 use serde_json::{Value, json};
 use std::{
     io::Write,
     process::{Command, Stdio},
 };
-use xield::model::{Action, Direction, NetworkRule, Protocol};
 
 fn rules() -> Vec<NetworkRule> {
     vec![
@@ -32,7 +32,7 @@ fn rules() -> Vec<NetworkRule> {
     ]
 }
 fn cli(args: &[&str], data: &[u8]) -> std::process::Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xield"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rooklet"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -80,7 +80,7 @@ fn explanation_keeps_missing_fields_unknown_and_handles_file_input() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("rules with spaces.json");
     std::fs::write(&path, data).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_xield"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rooklet"))
         .args(["network", "explain"])
         .arg(&path)
         .args([
@@ -121,7 +121,7 @@ fn diagnostics_reject_bad_rules_and_non_concrete_queries() {
 #[test]
 fn supplied_profile_check_warns_without_rejecting_valid_shadowed_rules() {
     let profile = json!({
-        "format": "xield-profile", "version": 1,
+        "format": "rooklet-profile", "version": 1,
         "firewall": {"enabled": true, "stealth": false, "block_all": false,
                      "allow_signed": true, "allow_signed_app": true},
         "applications": [], "network_rules": rules()
@@ -130,7 +130,7 @@ fn supplied_profile_check_warns_without_rejecting_valid_shadowed_rules() {
     let path = directory.path().join("profile.json");
     let before = serde_json::to_vec(&profile).unwrap();
     std::fs::write(&path, &before).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_xield"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rooklet"))
         .args(["profile", "check"])
         .arg(&path)
         .output()

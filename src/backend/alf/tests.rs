@@ -92,7 +92,7 @@ fn invalid_duplicate_missing_or_unregistered_targets_never_mutate() {
         vec![],
         vec![paths[0].clone(); 257],
         vec![paths[0].clone(); 2],
-        vec![paths[0].clone(), "/nonexistent/xield-test-target".into()],
+        vec![paths[0].clone(), "/nonexistent/rooklet-test-target".into()],
     ] {
         assert!(
             operations::set_applications(&invalid, Action::Block, &mut Fake::default()).is_err()

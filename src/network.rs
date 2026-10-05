@@ -18,5 +18,5 @@ pub use lifecycle::{apply, disable, remove, setup, status};
 pub use preflight::preflight_apply;
 
 const CONFIG: &str = "/etc/pf.conf";
-const ANCHOR_FILE: &str = "/etc/pf.anchors/xield";
+const ANCHOR_FILE: &str = "/etc/pf.anchors/rooklet";
 const MAX_FILE: u64 = 1_048_576;

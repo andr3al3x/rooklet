@@ -2,17 +2,17 @@
 use super::{args::NetworkCommand, config::input_rules};
 use crate::{auth::authenticate, json::print_json};
 use anyhow::{Context, Result, ensure};
-use std::{sync::atomic::AtomicBool, time::Duration};
-use xield::{
+use rooklet::{
     model::{NetworkRule, NetworkStatus},
     network,
 };
+use std::{sync::atomic::AtomicBool, time::Duration};
 
 pub(super) fn network_status() -> Result<NetworkStatus> {
-    if xield::command::is_root() {
+    if rooklet::command::is_root() {
         return Ok(network::status());
     }
-    let result = xield::command::run(
+    let result = rooklet::command::run(
         &std::env::current_exe()?,
         &["network".into(), "status".into()],
         None,
@@ -23,7 +23,7 @@ pub(super) fn network_status() -> Result<NetworkStatus> {
         Ok(text) => Ok(serde_json::from_str(&text)?),
         Err(_) => Ok(NetworkStatus {
             message: Some(
-                "PF status requires administrator access; run sudo -v or sudo xield network status"
+                "PF status requires administrator access; run sudo -v or sudo rooklet network status"
                     .into(),
             ),
             ..Default::default()
@@ -38,7 +38,7 @@ enum NetworkChange<'a> {
 }
 
 fn network_change(change: NetworkChange<'_>) -> Result<()> {
-    if xield::command::is_root() {
+    if rooklet::command::is_root() {
         return match change {
             NetworkChange::Setup(rules) => network::setup(rules),
             NetworkChange::Apply(rules) => network::apply(rules),
@@ -58,7 +58,7 @@ fn network_change(change: NetworkChange<'_>) -> Result<()> {
     if input.is_some() {
         args.push("--stdin".into());
     }
-    xield::command::run_transaction(
+    rooklet::command::run_transaction(
         &std::env::current_exe()?,
         &args,
         input.as_deref(),
@@ -93,11 +93,11 @@ pub(super) fn run(command: NetworkCommand) -> Result<()> {
         }
         NetworkCommand::Preflight(input) => {
             let rules = input_rules(&input, false)?;
-            if xield::command::is_root() {
+            if rooklet::command::is_root() {
                 network::preflight_apply(&rules)?;
             } else {
                 authenticate()?;
-                xield::command::run_with_timeout(
+                rooklet::command::run_with_timeout(
                     &std::env::current_exe()?,
                     &["network".into(), "preflight".into(), "--stdin".into()],
                     Some(&serde_json::to_vec(&rules)?),
@@ -139,7 +139,7 @@ pub(super) fn run(command: NetworkCommand) -> Result<()> {
             );
             ensure!(
                 status.configured,
-                "set up PF first: sudo xield network setup"
+                "set up PF first: sudo rooklet network setup"
             );
             let mut rules = status.rules;
             match command {

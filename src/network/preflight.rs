@@ -27,7 +27,7 @@ pub fn preflight_apply(rules: &[NetworkRule]) -> Result<()> {
     read_state()?;
     ensure!(
         parent_matches_managed_config(&run(&["-sr"], None)?),
-        "live PF parent configuration differs from Xield's managed layout"
+        "live PF parent configuration differs from Rooklet's managed layout"
     );
     Ok(())
 }
@@ -39,18 +39,18 @@ pub(super) fn validate(rules: &[NetworkRule]) -> Result<Validated> {
     trusted(Path::new(CONFIG), false)?;
     ensure!(
         configured(&bounded_read(Path::new(CONFIG))?),
-        "Xield's parent anchor is not configured; run network setup first"
+        "Rooklet's parent anchor is not configured; run network setup first"
     );
     ensure!(
         has_parent_anchor(&run(&["-sr"], None)?),
-        "Live parent PF rules do not reference Xield; run network setup after checking your PF configuration"
+        "Live parent PF rules do not reference Rooklet; run network setup after checking your PF configuration"
     );
     trusted_parents(Path::new(ANCHOR_FILE))?;
     trusted(Path::new(ANCHOR_FILE), false)?;
     let previous = bounded_read(Path::new(ANCHOR_FILE))?;
     ensure!(
-        previous.starts_with("# Xield network rules:"),
-        "Xield's anchor file was replaced; refusing to overwrite it"
+        previous.starts_with("# Rooklet network rules:"),
+        "Rooklet's anchor file was replaced; refusing to overwrite it"
     );
     let expected = validate_pf(&compiled)?;
     let candidate = State {

@@ -111,7 +111,7 @@ pub(super) fn terminate(
     let uid = system.uid();
     ensure!(
         uid != 0,
-        "process termination is unavailable while Xield runs as root"
+        "process termination is unavailable while Rooklet runs as root"
     );
     let mut seen = HashSet::new();
     for target in &request.targets {

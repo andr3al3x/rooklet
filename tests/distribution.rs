@@ -33,7 +33,7 @@ impl Package {
             )
             .unwrap();
         }
-        fs::copy(env!("CARGO_BIN_EXE_xield"), archive.join("xield")).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_rooklet"), archive.join("rooklet")).unwrap();
         Self {
             root,
             archive,
@@ -70,7 +70,7 @@ impl Package {
                 .unwrap()
                 .file_name()
                 .to_string_lossy()
-                .starts_with(".xield-install.")
+                .starts_with(".rooklet-install.")
         }));
     }
 }
@@ -88,16 +88,21 @@ fn assert_success(output: Output) {
 fn archive_installs_from_an_unrelated_directory_to_the_user_bin() {
     let package = Package::new();
     assert_success(package.run("install.sh", &[]));
-    let installed = package.bin_dir().join("xield");
+    let installed = package.bin_dir().join("rooklet");
     assert_eq!(
         fs::read(&installed).unwrap(),
-        fs::read(package.archive.join("xield")).unwrap()
+        fs::read(package.archive.join("rooklet")).unwrap()
     );
     assert_eq!(
         fs::metadata(&installed).unwrap().permissions().mode() & 0o777,
         0o755
     );
-    assert_success(Command::new(installed).arg("--version").output().unwrap());
+    let version = Command::new(installed).arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert_eq!(
+        String::from_utf8(version.stdout).unwrap(),
+        format!("rooklet {}\n", env!("CARGO_PKG_VERSION"))
+    );
     package.assert_no_staging_files(&package.bin_dir());
 }
 
@@ -106,11 +111,11 @@ fn explicit_source_and_destination_support_spaces_and_upgrades() {
     let package = Package::new();
     let bin_dir = package.root.path().join("custom bin directory");
     fs::create_dir(&bin_dir).unwrap();
-    let installed = bin_dir.join("xield");
+    let installed = bin_dir.join("rooklet");
     fs::write(&installed, "old executable").unwrap();
     fs::set_permissions(&installed, fs::Permissions::from_mode(0o600)).unwrap();
     let source = package.cwd.join("source executable");
-    fs::copy(env!("CARGO_BIN_EXE_xield"), &source).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_rooklet"), &source).unwrap();
     // A relative override is resolved from the caller's working directory.
     let args = [
         "--binary",
@@ -132,7 +137,7 @@ fn explicit_source_and_destination_support_spaces_and_upgrades() {
 fn install_and_uninstall_refuse_symlinks_and_directories() {
     let package = Package::new();
     fs::create_dir_all(package.bin_dir()).unwrap();
-    let destination = package.bin_dir().join("xield");
+    let destination = package.bin_dir().join("rooklet");
     let unrelated = package.root.path().join("unrelated executable");
     fs::write(&unrelated, "keep me").unwrap();
     symlink(&unrelated, &destination).unwrap();
@@ -163,9 +168,9 @@ fn install_and_uninstall_refuse_symlinks_and_directories() {
 fn invalid_sources_leave_the_previous_installation_intact() {
     let package = Package::new();
     fs::create_dir_all(package.bin_dir()).unwrap();
-    let installed = package.bin_dir().join("xield");
+    let installed = package.bin_dir().join("rooklet");
     fs::write(&installed, "previous version").unwrap();
-    let source = package.archive.join("xield");
+    let source = package.archive.join("rooklet");
     for mode in [0o755, 0o644] {
         fs::write(&source, "not a Mach-O executable").unwrap();
         fs::set_permissions(&source, fs::Permissions::from_mode(mode)).unwrap();
@@ -182,9 +187,9 @@ fn invalid_sources_leave_the_previous_installation_intact() {
 fn mach_o_nonexecutables_and_other_architectures_preserve_the_previous_installation() {
     let package = Package::new();
     fs::create_dir_all(package.bin_dir()).unwrap();
-    let installed = package.bin_dir().join("xield");
+    let installed = package.bin_dir().join("rooklet");
     fs::write(&installed, "previous version").unwrap();
-    let source = package.archive.join("xield");
+    let source = package.archive.join("rooklet");
     let executable = fs::read(&source).unwrap();
     // Both supported macOS targets use a little-endian 64-bit Mach-O header.
     assert_eq!(&executable[..4], &0xfeed_facfu32.to_le_bytes());
@@ -268,7 +273,7 @@ fn uninstall_is_idempotent_and_preserves_other_files_and_data() {
         package.bin_dir().join("another-command"),
         package
             .home
-            .join("Library/Application Support/xield/geoip/Country.mmdb"),
+            .join("Library/Application Support/rooklet/geoip/Country.mmdb"),
         package.root.path().join("PF state fixture/network.json"),
     ];
     for path in &sentinel_paths {
@@ -277,7 +282,7 @@ fn uninstall_is_idempotent_and_preserves_other_files_and_data() {
     }
     assert_success(package.run("uninstall.sh", &[]));
     assert_success(package.run("uninstall.sh", &[]));
-    assert!(!package.bin_dir().join("xield").exists());
+    assert!(!package.bin_dir().join("rooklet").exists());
     for path in &sentinel_paths {
         assert_eq!(fs::read_to_string(path).unwrap(), "preserved");
     }
@@ -286,18 +291,18 @@ fn uninstall_is_idempotent_and_preserves_other_files_and_data() {
 #[test]
 fn installation_preserves_extended_attributes() {
     let package = Package::new();
-    let attribute = "org.xield.distribution-test";
+    let attribute = "org.rooklet.distribution-test";
     assert_success(
         Command::new("/usr/bin/xattr")
             .args(["-w", attribute, "preserved marker"])
-            .arg(package.archive.join("xield"))
+            .arg(package.archive.join("rooklet"))
             .output()
             .unwrap(),
     );
     assert_success(package.run("install.sh", &[]));
     let output = Command::new("/usr/bin/xattr")
         .args(["-p", attribute])
-        .arg(package.bin_dir().join("xield"))
+        .arg(package.bin_dir().join("rooklet"))
         .output()
         .unwrap();
     assert!(output.status.success());

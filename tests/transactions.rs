@@ -1,4 +1,5 @@
 //! Harmless helper fixtures exercise transaction supervision without PF or sudo.
+use rooklet::command;
 use std::{
     path::Path,
     sync::{
@@ -7,7 +8,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use xield::command;
 
 #[test]
 fn transaction_checks_cancellation_before_launch() {

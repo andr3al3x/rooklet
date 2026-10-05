@@ -146,7 +146,7 @@ fn verify_profile(snapshot: &Snapshot, profile: &Profile, configured: bool) -> R
     );
     ensure!(
         !configured || (snapshot.network.enabled && snapshot.network.applied),
-        "PF is disabled or the Xield anchor is not applied after profile apply"
+        "PF is disabled or the Rooklet anchor is not applied after profile apply"
     );
     Ok(())
 }
@@ -408,7 +408,7 @@ mod tests {
             }];
             backend.first_network_mismatch = Some(enabled_mismatch);
             let error = apply_with(&mut backend, &prepared).unwrap_err().to_string();
-            assert!(error.contains("PF is disabled or the Xield anchor is not applied"));
+            assert!(error.contains("PF is disabled or the Rooklet anchor is not applied"));
             assert!(error.contains("incoming=restored and verified"));
             assert!(error.contains("network=restored and verified"));
             assert_eq!(backend.network_mutations, 2);
@@ -464,7 +464,7 @@ mod tests {
             blocked: false,
         }];
         let profile = Profile {
-            format: "xield-profile".into(),
+            format: "rooklet-profile".into(),
             version: 1,
             firewall: None,
             applications: vec![Application {

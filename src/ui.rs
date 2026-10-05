@@ -36,7 +36,7 @@ pub fn draw_interactive(frame: &mut Frame, app: &App, theme: Theme, state: &mut 
     frame.render_widget(Block::default().style(p.style()), area);
     if area.width < 50 || area.height < 17 {
         frame.render_widget(
-            Paragraph::new("XIELD\n\nUse a terminal at least 50 × 17.\nPress q to quit.")
+            Paragraph::new("ROOKLET\n\nUse a terminal at least 50 × 17.\nPress q to quit.")
                 .style(p.style()),
             area.inner(Margin::new(2, 1)),
         );

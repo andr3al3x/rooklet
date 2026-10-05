@@ -2,7 +2,7 @@ mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
-use xield::{
+use rooklet::{
     app::{App, Popup, View, clean},
     model::*,
     ui::{self, Theme},
@@ -84,7 +84,7 @@ fn country_search_finds_connections_and_empty_search_recovers() {
     assert!(
         app.activity_rows()
             .iter()
-            .any(|row| matches!(row, xield::app::ActivityRow::Connection(_, _)))
+            .any(|row| matches!(row, rooklet::app::ActivityRow::Connection(_, _)))
     );
 }
 #[test]
@@ -169,7 +169,7 @@ fn grouped_app_selection_and_expansion_survive_helper_pid_changes() {
     assert!(
         app.activity_rows()
             .iter()
-            .any(|row| matches!(row, xield::app::ActivityRow::Connection(_, _)))
+            .any(|row| matches!(row, rooklet::app::ActivityRow::Connection(_, _)))
     );
 }
 

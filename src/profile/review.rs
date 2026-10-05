@@ -128,7 +128,7 @@ pub(super) fn render(prepared: &Prepared) -> String {
         for warning in warnings {
             let _ = writeln!(
                 out,
-                "Warning: #{} {} is fully shadowed by #{} {} within Xield's anchor.",
+                "Warning: #{} {} is fully shadowed by #{} {} within Rooklet's anchor.",
                 warning.shadowed_position,
                 clean(&warning.shadowed_id),
                 warning.covering_position,
@@ -139,11 +139,11 @@ pub(super) fn render(prepared: &Prepared) -> String {
     out.push_str("Incoming changes are sequential, not atomic. Failure triggers best-effort restoration with readback; restoration can fail.\n");
     out.push_str("PF affects the whole machine. Other anchors and existing states still affect traffic; a loaded rule is not an enforcement verdict.\n");
     if before.configured {
-        out.push_str("Applying loads the complete Xield anchor and acquires Xield's PF enable reference when needed.\n");
+        out.push_str("Applying loads the complete Rooklet anchor and acquires Rooklet's PF enable reference when needed.\n");
         if !before.enabled || !before.applied {
-            out.push_str("PF activation: the prior PF/Xield anchor is inactive or unapplied; this apply activates Xield's anchor.\n");
+            out.push_str("PF activation: the prior PF/Rooklet anchor is inactive or unapplied; this apply activates Rooklet's anchor.\n");
         }
-        out.push_str("Rollback restores Xield rule content where possible; prior PF activation may remain changed. Other PF references are never disabled.\n");
+        out.push_str("Rollback restores Rooklet rule content where possible; prior PF activation may remain changed. Other PF references are never disabled.\n");
     } else {
         out.push_str("PF is not configured; this profile has no network rules and does not set up or activate PF.\n");
     }

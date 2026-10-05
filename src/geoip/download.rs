@@ -62,7 +62,7 @@ fn fetch(url: &str, cancel: &AtomicBool, deadline: Instant) -> Result<Download> 
         .max_redirects(0)
         .http_status_as_error(false)
         .proxy(None)
-        .user_agent("xield/0.2 DB-IP Country Lite updater")
+        .user_agent("rooklet/0.2 DB-IP Country Lite updater")
         .timeout_global(Some(
             deadline
                 .saturating_duration_since(Instant::now())

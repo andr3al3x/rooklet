@@ -5,8 +5,8 @@ use crate::{
     json::{print_json, write_json},
 };
 use anyhow::{Context, Result, ensure};
+use rooklet::{backend::Backend, clean, clean_multiline, profile};
 use std::fs;
-use xield::{backend::Backend, clean, clean_multiline, profile};
 
 pub(super) fn run(command: ProfileCommand) -> Result<()> {
     match command {
@@ -39,7 +39,7 @@ pub(super) fn run(command: ProfileCommand) -> Result<()> {
             let profile = profile::read(&path)?;
             ensure!(
                 yes,
-                "review with `xield profile check PATH`, then pass --yes to replace all profile scopes"
+                "review with `rooklet profile check PATH`, then pass --yes to replace all profile scopes"
             );
             authenticate()?;
             let mut backend = Backend::new()?;

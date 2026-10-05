@@ -6,22 +6,22 @@ use std::{
 };
 use tempfile::tempdir;
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_xield"))
+    Command::new(env!("CARGO_BIN_EXE_rooklet"))
 }
 #[test]
-fn extension_cli_commands_and_flags_are_gone() {
+fn unsupported_commands_and_flags_are_rejected() {
     for args in [
         vec!["--bridge", "/tmp/host", "status"],
         vec!["mode", "ask"],
         vec!["allow", "code:identity"],
-        vec!["import", "old.json"],
+        vec!["import", "profile.json"],
     ] {
         assert!(!cli().args(args).output().unwrap().status.success());
     }
 }
 fn supplied_profile() -> Value {
     json!({
-        "format": "xield-profile", "version": 1,
+        "format": "rooklet-profile", "version": 1,
         "firewall": {"enabled": true, "stealth": false, "block_all": false,
                      "allow_signed": true, "allow_signed_app": true},
         "applications": [{"path": "/nonexistent/App.app", "name": "App", "blocked": true}],
@@ -59,12 +59,20 @@ fn supplied_profile_check_roundtrips_without_changing_input() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("pass --yes"));
 }
 #[test]
-fn profiles_reject_old_schema_and_unknown_fields() {
+fn profiles_reject_invalid_schemas_and_unknown_fields() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("profile.json");
+    let mut unknown_field = supplied_profile();
+    unknown_field["unsupported"] = true.into();
+    let mut unknown_format = supplied_profile();
+    unknown_format["format"] = "foreign-profile".into();
+    let mut unknown_version = supplied_profile();
+    unknown_version["version"] = 2.into();
     for data in [
         json!({"version":1,"rules":[]}),
-        json!({"format":"xield-profile","version":1,"firewall":{},"applications":[],"network_rules":[],"bridge":"old"}),
+        unknown_field,
+        unknown_format,
+        unknown_version,
     ] {
         fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
         assert!(
@@ -133,7 +141,7 @@ fn invalid_rules_and_ports_fail_before_authentication() {
     );
     let dir = tempdir().unwrap();
     let path = dir.path().join("rules.json");
-    fs::write(&path, "[{\"app_id\":\"old\"}]").unwrap();
+    fs::write(&path, "[{\"unsupported\":true}]").unwrap();
     assert!(
         !cli()
             .args(["network", "preview"])
@@ -146,7 +154,7 @@ fn invalid_rules_and_ports_fail_before_authentication() {
 }
 
 #[test]
-fn country_update_help_replaces_the_old_path_flag() {
+fn country_update_help_documents_managed_database_updates() {
     let help = cli().arg("--help").output().unwrap();
     assert!(help.status.success());
     let help = String::from_utf8(help.stdout).unwrap();

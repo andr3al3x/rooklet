@@ -1,9 +1,9 @@
-use std::{net::IpAddr, time::Duration};
-use xield::{
+use rooklet::{
     activity::{Tracker, parse_csv, parse_flow},
     geoip::{GeoIp, is_local},
     model::Protocol,
 };
+use std::{net::IpAddr, time::Duration};
 fn sample(incoming: u64, outgoing: u64, flow_in: u64, flow_out: u64) -> String {
     format!(
         ",bytes_in,bytes_out,\n\"Example, App.987654\",{incoming},{outgoing},\ntcp4 192.168.1.2:1234<->8.8.8.8:443,{flow_in},{flow_out},\ntcp6 fe80::1%en0.5555<->fe80::2%en0.6666,10,20,\nudp4 *:5353<->*:*,100,200,\ntcp4 *:22<->*:*,,,\n"
@@ -158,7 +158,7 @@ fn first_buffered_batch_starts_rates_at_its_final_observation() {
 }
 #[test]
 fn buffered_app_rates_include_helpers_that_exit_before_the_last_sample() {
-    use xield::activity::RawProcess;
+    use rooklet::activity::RawProcess;
     let temp = tempfile::tempdir().unwrap();
     let bundle = temp.path().join("Example.app");
     std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
@@ -275,7 +275,7 @@ fn csv_record_size_is_bounded() {
 
 #[test]
 fn app_group_session_totals_survive_helper_exit_and_counter_reset() {
-    use xield::activity::RawProcess;
+    use rooklet::activity::RawProcess;
     let temp = tempfile::tempdir().unwrap();
     let bundle = temp.path().join("Example.app");
     std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
@@ -348,7 +348,7 @@ fn app_group_session_totals_survive_helper_exit_and_counter_reset() {
 }
 #[test]
 fn an_unverified_app_directory_does_not_group_unrelated_processes() {
-    use xield::activity::RawProcess;
+    use rooklet::activity::RawProcess;
     let temp = tempfile::tempdir().unwrap();
     let bundle = temp.path().join("Unverified.app");
     std::fs::create_dir(&bundle).unwrap();
@@ -372,7 +372,7 @@ fn an_unverified_app_directory_does_not_group_unrelated_processes() {
 
 #[test]
 fn grouped_helpers_merge_same_peer_without_adding_flow_bytes_to_app_total() {
-    use xield::activity::{RawFlow, RawProcess};
+    use rooklet::activity::{RawFlow, RawProcess};
     let temp = tempfile::tempdir().unwrap();
     let bundle = temp.path().join("Example.app");
     std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();

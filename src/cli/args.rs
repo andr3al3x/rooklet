@@ -1,10 +1,10 @@
 //! Command-line syntax; execution lives in sibling modules.
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
-use xield::{
+use rooklet::{
     model::{Action, Direction, Protocol, Setting},
     ui::Theme,
 };
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -82,7 +82,7 @@ pub(super) enum NetworkCommand {
     Status,
     /// Validate saved or supplied rules and report complete single-rule shadowing. Read-only.
     Check(InputRules),
-    /// Predict matching within Xield's anchor for a hypothetical connection. No live verdict.
+    /// Predict matching within Rooklet's anchor for a hypothetical connection. No live verdict.
     Explain {
         #[command(flatten)]
         input: InputRules,
@@ -103,7 +103,7 @@ pub(super) enum NetworkCommand {
     },
     /// Install a dedicated PF anchor in a supported configuration; preserves existing rules.
     Setup(InputRules),
-    /// Validate and replace only Xield's network rules.
+    /// Validate and replace only Rooklet's network rules.
     Apply(InputRules),
     /// Render validated PF syntax without changing anything.
     Preview(InputRules),
@@ -121,9 +121,9 @@ pub(super) enum NetworkCommand {
         #[arg(allow_hyphen_values=true,value_parser=clap::value_parser!(i64).range(-1..=1))]
         offset: i64,
     },
-    /// Clear Xield's loaded anchor and release its own PF enable reference.
+    /// Clear Rooklet's loaded anchor and release its own PF enable reference.
     Disable,
-    /// Remove Xield's anchor setup and owned state.
+    /// Remove Rooklet's anchor setup and owned state.
     Remove,
 }
 #[derive(Args)]
@@ -172,7 +172,7 @@ pub(super) struct NetworkArgs {
 pub(super) enum ProfileCommand {
     /// Export observed settings, incoming app entries, and saved network rules.
     Export { path: Option<PathBuf> },
-    /// Validate a new-format profile and display the planned configuration.
+    /// Validate a profile and print its configuration.
     Check { path: PathBuf },
     /// Apply all scopes. ALF operations are sequential; failures trigger best-effort restoration.
     Apply {

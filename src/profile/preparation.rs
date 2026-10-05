@@ -58,7 +58,7 @@ impl Baseline {
     }
     pub fn profile(&self) -> Profile {
         Profile {
-            format: "xield-profile".into(),
+            format: "rooklet-profile".into(),
             version: 1,
             firewall: Some(self.firewall.clone()),
             applications: self.applications.clone(),
@@ -94,13 +94,13 @@ pub(super) fn read_file(file: File) -> Result<Profile> {
     let mut bytes = Vec::new();
     file.take(MAX_BYTES as u64 + 1).read_to_end(&mut bytes)?;
     ensure!(bytes.len() <= MAX_BYTES, "configuration exceeds 1 MiB");
-    let profile = serde_json::from_slice(&bytes).context("invalid Xield profile")?;
+    let profile = serde_json::from_slice(&bytes).context("invalid Rooklet profile")?;
     validate(&profile)?;
     Ok(profile)
 }
 pub(super) fn validate(profile: &Profile) -> Result<()> {
     ensure!(
-        profile.format == "xield-profile" && profile.version == 1,
+        profile.format == "rooklet-profile" && profile.version == 1,
         "unsupported profile format"
     );
     ensure!(

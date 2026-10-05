@@ -117,7 +117,7 @@ impl Live {
                 .push(format!("App termination unavailable: {error:#}")),
         }
         if snapshot.geoip.is_none() {
-            snapshot.notices.push("Countries are Unknown until you run xield geoip update or press g in Settings. Local and link-local peers are identified offline.".into());
+            snapshot.notices.push("Countries are Unknown until you run rooklet geoip update or press g in Settings. Local and link-local peers are identified offline.".into());
         }
         if let Some(error) = &self.geoip_error {
             snapshot.notices.push(error.clone());

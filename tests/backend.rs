@@ -1,3 +1,7 @@
+use rooklet::{
+    backend::{parse_app_blocked, parse_applications, parse_settings, validate_application_path},
+    command,
+};
 use std::{
     path::Path,
     sync::{
@@ -5,10 +9,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
-};
-use xield::{
-    backend::{parse_app_blocked, parse_applications, parse_settings, validate_application_path},
-    command,
 };
 
 #[test]
@@ -87,7 +87,7 @@ fn app_verification_matches_the_requested_path() {
 #[cfg(target_os = "macos")]
 #[test]
 fn cancelled_backend_rejects_work() {
-    use xield::{
+    use rooklet::{
         backend::Backend,
         model::{Mutation, Setting},
     };

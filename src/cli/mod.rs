@@ -11,12 +11,12 @@ use crate::{auth::authenticate, json::print_json};
 use anyhow::{Result, ensure};
 use args::{AppsCommand, Cli, CliCommand, FirewallCommand, Switch};
 use clap::Parser;
-use std::io::{self, IsTerminal};
-use xield::{
+use rooklet::{
     backend::Backend,
     clean, clean_multiline,
     model::{Action, Mutation},
 };
+use std::io::{self, IsTerminal};
 
 pub(crate) fn run() -> Result<()> {
     let cli = Cli::try_parse().unwrap_or_else(|error| {
@@ -43,7 +43,7 @@ pub(crate) fn run() -> Result<()> {
     }
     ensure!(
         io::stdin().is_terminal() && io::stdout().is_terminal(),
-        "the TUI needs an interactive terminal; use `xield status` for JSON"
+        "the TUI needs an interactive terminal; use `rooklet status` for JSON"
     );
     crate::tui::run(cli.theme)
 }
@@ -52,7 +52,7 @@ fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
         CliCommand::Status => print_json(&backend.snapshot()?)?,
         CliCommand::Doctor => {
             let snapshot = backend.snapshot()?;
-            println!("Standalone Rust; no companion or system extension required.");
+            println!("Rooklet uses the macOS application firewall and PF.");
             println!(
                 "Incoming firewall: {}",
                 snapshot
@@ -88,7 +88,7 @@ fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
                 let snapshot = backend.snapshot()?;
                 ensure!(
                     snapshot.applications_available,
-                    "incoming application entries are unavailable; see xield status diagnostics"
+                    "incoming application entries are unavailable; see rooklet status diagnostics"
                 );
                 print_json(&snapshot.applications)?;
             }

@@ -1,5 +1,5 @@
+use rooklet::geoip::{GeoIp, is_local};
 use std::net::IpAddr;
-use xield::geoip::{GeoIp, is_local};
 
 #[test]
 fn empty_offline_database_never_invents_a_country() {

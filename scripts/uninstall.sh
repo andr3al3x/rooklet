@@ -2,8 +2,8 @@
 # Remove only the installed executable; firewall rules and data require explicit cleanup.
 set -eu
 
-fail() { printf '%s\n' "xield: $*" >&2; exit 1; }
-usage() { printf '%s\n' 'Usage: uninstall.sh [--bin-dir DIR]' 'Default destination: $HOME/.local/bin. Removes only the xield executable.'; }
+fail() { printf '%s\n' "rooklet: $*" >&2; exit 1; }
+usage() { printf '%s\n' 'Usage: uninstall.sh [--bin-dir DIR]' 'Default destination: $HOME/.local/bin. Removes only the rooklet executable.'; }
 bin_dir=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -19,12 +19,12 @@ done
 if [ -z "$bin_dir" ]; then
     bin_dir="${HOME:?HOME must be set for the default installation directory}/.local/bin"
 fi
-[ "$(/usr/bin/uname -s)" = Darwin ] || fail 'Xield requires macOS'
+[ "$(/usr/bin/uname -s)" = Darwin ] || fail 'Rooklet requires macOS'
 case "$bin_dir" in /*) ;; *) fail '--bin-dir must be an absolute path' ;; esac
-destination="$bin_dir/xield"
+destination="$bin_dir/rooklet"
 [ ! -L "$destination" ] || fail "refusing to remove a symlink: $destination"
 if [ ! -e "$destination" ]; then
-    printf '%s\n' "No Xield executable at $destination"
+    printf '%s\n' "No Rooklet executable at $destination"
     exit 0
 fi
 [ -f "$destination" ] || fail "destination is not a regular file: $destination"

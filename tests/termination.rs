@@ -2,7 +2,7 @@ mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
-use xield::{
+use rooklet::{
     app::{App, ConfirmedAction, Effect, Popup, View},
     process::{SignalFailure, TerminationMode, TerminationReport, TerminationRequest},
     ui::{self, Theme},

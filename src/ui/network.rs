@@ -51,7 +51,7 @@ pub(super) fn draw(
             "NETWORK RULES",
             concat!(
                 "Optional machine-wide IP and port filtering.\n\nSet up the dedicated PF anchor:\n",
-                "  sudo xield network setup\n\nApplication-specific outgoing rules are unavailable."
+                "  sudo rooklet network setup\n\nApplication-specific outgoing rules are unavailable."
             ),
             p,
         );

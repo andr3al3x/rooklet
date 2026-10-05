@@ -1,10 +1,10 @@
+use rooklet::{clean, clean_multiline};
 use serde_json::{Value, json};
 use std::{fs, process::Command};
 use tempfile::tempdir;
-use xield::{clean, clean_multiline};
 
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_xield"))
+    Command::new(env!("CARGO_BIN_EXE_rooklet"))
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn human_sanitization_does_not_change_json_profile_fields() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("profile.json");
     let profile = json!({
-        "format": "xield-profile", "version": 1,
+        "format": "rooklet-profile", "version": 1,
         "firewall": {"enabled": true, "stealth": false, "block_all": false,
                      "allow_signed": true, "allow_signed_app": true},
         "applications": [{"path": "/nonexistent/App.app", "name": "App\u{202e}\u{2066}", "blocked": true}],

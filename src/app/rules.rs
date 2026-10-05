@@ -94,7 +94,7 @@ impl App {
             }
         };
         let mut body = String::from(
-            "Applies to ALL applications on this Mac.\nFirst matching enabled Xield rule wins.\nExisting connections may continue through PF state.\n\n",
+            "Applies to ALL applications on this Mac.\nFirst matching enabled Rooklet rule wins.\nExisting connections may continue through PF state.\n\n",
         );
         if !warnings.is_empty() {
             body.push_str("Shadow warnings (single earlier covering rule):\n");
@@ -126,7 +126,7 @@ impl App {
             ));
         }
         if rules.is_empty() {
-            body.push_str("No Xield rules remain.\n");
+            body.push_str("No Rooklet rules remain.\n");
         }
         self.confirm(
             "Review machine-wide rules",

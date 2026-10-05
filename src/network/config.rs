@@ -2,9 +2,9 @@
 use super::MAX_FILE;
 use anyhow::{Result, ensure};
 
-const BEGIN: &str = "# BEGIN XIELD MANAGED ANCHOR";
-const END: &str = "# END XIELD MANAGED ANCHOR";
-const BLOCK: &str = "# BEGIN XIELD MANAGED ANCHOR\nanchor \"xield\"\nload anchor \"xield\" from \"/etc/pf.anchors/xield\"\n# END XIELD MANAGED ANCHOR\n";
+const BEGIN: &str = "# BEGIN ROOKLET MANAGED ANCHOR";
+const END: &str = "# END ROOKLET MANAGED ANCHOR";
+const BLOCK: &str = "# BEGIN ROOKLET MANAGED ANCHOR\nanchor \"rooklet\"\nload anchor \"rooklet\" from \"/etc/pf.anchors/rooklet\"\n# END ROOKLET MANAGED ANCHOR\n";
 
 pub(super) fn patch_config(source: &str, install: bool) -> Result<String> {
     ensure!(
@@ -15,18 +15,18 @@ pub(super) fn patch_config(source: &str, install: bool) -> Result<String> {
     let ends = source.matches(END).count();
     ensure!(
         begins == ends && begins <= 1,
-        "Xield PF configuration markers were changed; refusing to overwrite them"
+        "Rooklet PF configuration markers were changed; refusing to overwrite them"
     );
     let mut clean = source.to_string();
     if begins == 1 {
         let start = source.find(BEGIN).unwrap();
         ensure!(
             start == 0 || source.as_bytes()[start - 1] == b'\n',
-            "Xield marker is not on its own line"
+            "Rooklet marker is not on its own line"
         );
         ensure!(
             source[start..].starts_with(BLOCK),
-            "Managed Xield PF block was changed; restore it before continuing"
+            "Managed Rooklet PF block was changed; restore it before continuing"
         );
         clean.replace_range(start..start + BLOCK.len(), "");
     }
@@ -45,7 +45,7 @@ pub(super) fn patch_config(source: &str, install: bool) -> Result<String> {
                     | "anchor \"com.apple/*\""
                     | "load anchor \"com.apple\" from \"/etc/pf.anchors/com.apple\""
             ),
-            "Custom PF configuration is present ({line}); Xield supports only Apple's stock anchor layout and refuses to reload this root ruleset"
+            "Custom PF configuration is present ({line}); Rooklet supports only Apple's stock anchor layout and refuses to reload this root ruleset"
         );
     }
     ensure!(
@@ -71,10 +71,10 @@ pub(super) fn configured(source: &str) -> bool {
 pub(super) fn has_parent_anchor(output: &str) -> bool {
     output
         .lines()
-        .any(|line| matches!(line.trim(), "anchor \"xield\" all" | "anchor \"xield\""))
+        .any(|line| matches!(line.trim(), "anchor \"rooklet\" all" | "anchor \"rooklet\""))
 }
 pub(super) fn parent_matches_managed_config(output: &str) -> bool {
-    normalized_rules(output) == "anchor \"com.apple/*\" all\nanchor \"xield\" all"
+    normalized_rules(output) == "anchor \"com.apple/*\" all\nanchor \"rooklet\" all"
 }
 pub(super) fn setup_needs_reload(
     is_configured: bool,
@@ -87,11 +87,11 @@ pub(super) fn setup_needs_reload(
     }
     ensure!(
         !owned_token_live,
-        "Xield owns a live PF reference while its parent configuration is missing; disable Xield before setting up again"
+        "Rooklet owns a live PF reference while its parent configuration is missing; disable Rooklet before setting up again"
     );
     ensure!(
         live_anchor.is_empty(),
-        "An existing live Xield anchor contains rules without a managed parent; disable Xield or inspect those rules before setup"
+        "An existing live Rooklet anchor contains rules without a managed parent; disable Rooklet or inspect those rules before setup"
     );
     Ok(true)
 }
@@ -120,7 +120,7 @@ pub(super) fn validate_parent_rules(filters: &str, translations: &str) -> Result
             matches!(
                 line,
                 "anchor \"com.apple/*\" all"
-                    | "anchor \"xield\" all"
+                    | "anchor \"rooklet\" all"
                     | "nat-anchor \"com.apple/*\" all"
                     | "rdr-anchor \"com.apple/*\" all"
             ) || diagnostic_line(line),
@@ -146,24 +146,38 @@ mod tests {
         assert!(patch_config(&format!("{APPLE}pass all\n"), true).is_err());
         assert!(
             patch_config(
-                &format!("{APPLE}{BLOCK}").replace("anchor \"xield\"\n", "anchor \"other\"\n"),
+                &format!("{APPLE}{BLOCK}").replace("anchor \"rooklet\"\n", "anchor \"other\"\n"),
                 false
             )
             .is_err()
         );
         assert!(patch_config(&format!("{APPLE}{BLOCK}{BLOCK}"), true).is_err());
-        assert!(patch_config(&format!("{APPLE}# BEGIN XIELD MANAGED ANCHOR\n"), false).is_err());
+        assert!(patch_config(&format!("{APPLE}# BEGIN ROOKLET MANAGED ANCHOR\n"), false).is_err());
     }
     #[test]
     fn live_rules_normalization_and_reference_are_exact() {
-        assert!(has_parent_anchor("anchor \"xield\" all\n"));
-        assert!(!has_parent_anchor("anchor \"xield/*\" all\n"));
+        assert!(has_parent_anchor("anchor \"rooklet\" all\n"));
+        assert!(!has_parent_anchor("anchor \"rooklet/*\" all\n"));
+        assert!(!has_parent_anchor("anchor \"rooklet-other\" all\n"));
         assert_eq!(
             normalized_rules(
                 "No ALTQ support in kernel\nALTQ related functions disabled\npass in quick inet all\n"
             ),
             "pass in quick inet all"
         );
+    }
+    #[test]
+    fn managed_anchor_requires_its_exact_block_and_destination() {
+        assert!(patch_config(&format!("{APPLE}anchor \"rooklet\"\n"), true).is_err());
+        let installed = patch_config(APPLE, true).unwrap();
+        let replaced_destination =
+            installed.replace("/etc/pf.anchors/rooklet", "/etc/pf.anchors/rooklet-other");
+        assert!(!configured(&replaced_destination));
+        assert!(patch_config(&replaced_destination, false).is_err());
+        assert!(patch_config(&replaced_destination, true).is_err());
+        assert!(!parent_matches_managed_config(
+            "anchor \"com.apple/*\" all\nanchor \"rooklet-other\" all"
+        ));
     }
     #[test]
     fn explicit_setup_recovers_an_unloaded_parent_without_adopting_orphan_rules() {
@@ -176,7 +190,7 @@ mod tests {
     }
     #[test]
     fn parent_reload_rejects_custom_filter_and_translation_rules() {
-        let filters = "anchor \"com.apple/*\" all\nanchor \"xield\" all\n";
+        let filters = "anchor \"com.apple/*\" all\nanchor \"rooklet\" all\n";
         let translations = "nat-anchor \"com.apple/*\" all\nrdr-anchor \"com.apple/*\" all\n";
         assert!(validate_parent_rules(filters, translations).is_ok());
         assert!(validate_parent_rules(&format!("{filters}pass all\n"), translations).is_err());

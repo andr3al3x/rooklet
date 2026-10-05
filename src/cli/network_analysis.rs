@@ -2,14 +2,14 @@
 use super::{args::InputRules, config::input_rules, network::network_status};
 use crate::json::print_json;
 use anyhow::{Result, ensure};
-use serde_json::json;
-use xield::{
+use rooklet::{
     app::clean,
     model::NetworkRule,
     network::{self, RuleQuery},
 };
+use serde_json::json;
 
-const SCOPE: &str = "Prediction within Xield's anchor only. Other anchors and existing PF states can affect traffic; this is not a live verdict.";
+const SCOPE: &str = "Prediction within Rooklet's anchor only. Other anchors and existing PF states can affect traffic; this is not a live verdict.";
 
 fn rules(input: &InputRules) -> Result<Vec<NetworkRule>> {
     if input.path.is_some() || input.stdin {
@@ -39,7 +39,7 @@ pub(super) fn explain(input: &InputRules, query: RuleQuery) -> Result<()> {
 pub(super) fn warn(rules: &[NetworkRule]) -> Result<()> {
     for warning in network::shadow_warnings(rules)? {
         eprintln!(
-            "warning: #{} {} is fully shadowed by #{} {} within Xield's anchor",
+            "warning: #{} {} is fully shadowed by #{} {} within Rooklet's anchor",
             warning.shadowed_position,
             clean(&warning.shadowed_id),
             warning.covering_position,

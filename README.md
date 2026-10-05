@@ -1,11 +1,10 @@
-# Xield
+# Rooklet
 
 A compact Rust TUI for macOS firewall settings, network rules, and app traffic.
 Manage incoming permissions, inspect connections and countries, and apply
 machine-wide network rules from one terminal.
 
-One executable. Keyboard and mouse navigation. No Swift companion, system
-extension, Apple Developer account, or notarization workflow for source installs.
+One executable with keyboard and mouse navigation.
 
 ## Quick start
 
@@ -19,11 +18,11 @@ cargo install --path . --locked
 Run as your normal user:
 
 ```sh
-xield doctor
-xield
+rooklet doctor
+rooklet
 ```
 
-Launching Xield does not activate or change either firewall. Administrator
+Launching Rooklet does not activate or change either firewall. Administrator
 access is requested when needed through normal `sudo` authentication; you do
 not need to run the whole app with `sudo`.
 
@@ -40,18 +39,18 @@ Use the archive for your Mac: `macos-arm64` for Apple silicon, or
 same directory, verify and extract it. For version 0.2.0 on Apple silicon:
 
 ```sh
-shasum -a 256 -c xield-0.2.0-macos-arm64.tar.gz.sha256
-tar -xzf xield-0.2.0-macos-arm64.tar.gz
-cd xield-0.2.0-macos-arm64
+shasum -a 256 -c rooklet-0.2.0-macos-arm64.tar.gz.sha256
+tar -xzf rooklet-0.2.0-macos-arm64.tar.gz
+cd rooklet-0.2.0-macos-arm64
 sh install.sh
 export PATH="$HOME/.local/bin:$PATH"
-xield --version
+rooklet --version
 ```
 
 The bundled installer needs only macOS's standard tools; neither Rust nor Xcode
 command-line tools are needed. It copies the executable
-to `~/.local/bin/xield`, sets executable permissions, and atomically replaces an
-existing regular file for upgrades. It does not request sudo, run Xield, edit
+to `~/.local/bin/rooklet`, sets executable permissions, and atomically replaces an
+existing regular file for upgrades. It does not request sudo, run Rooklet, edit
 shell configuration, or change firewall settings or country data. Add the PATH
 line to your shell configuration if this directory is not already on PATH.
 
@@ -74,10 +73,10 @@ sh uninstall.sh
 sh uninstall.sh --bin-dir /absolute/path/to/bin
 ```
 
-Uninstall removes only the `xield` executable. Applied firewall settings, PF
-rules, backups, and country data remain. If you want to remove Xield's PF setup,
-explicitly run `xield network remove` before uninstalling. For an installation
-made with `cargo install`, use `cargo uninstall xield` instead.
+Uninstall removes only the `rooklet` executable. Applied firewall settings, PF
+rules, backups, and country data remain. If you want to remove Rooklet's PF setup,
+explicitly run `rooklet network remove` before uninstalling. For an installation
+made with `cargo install`, use `cargo uninstall rooklet` instead.
 
 ## Features and scope
 
@@ -88,13 +87,13 @@ made with `cargo install`, use `cargo uninstall xield` instead.
 | Network | Add, edit, reorder, and toggle IP/CIDR, port, protocol, direction, and interface rules | PF rules for every application on the Mac |
 | Settings | Turn the incoming firewall on/off; manage stealth, block-all, signed-app defaults, and country data | macOS application firewall and local GeoIP database |
 
-Xield also provides JSON status, configuration profiles, rule previews/explanations, and
+Rooklet also provides JSON status, configuration profiles, rule previews/explanations, and
 light/monochrome themes:
 
 ```sh
-xield status
-xield --theme light
-xield --theme mono
+rooklet status
+rooklet --theme light
+rooklet --theme mono
 ```
 
 **Status: early release.** Local checks cover the Rust implementation, native
@@ -118,14 +117,14 @@ and review incoming permissions with `a` / `b`.
 The following CLI commands read state or explicitly request changes:
 
 ```sh
-xield firewall status
-xield apps list
-xield apps add /Applications/Example.app
-xield apps block /Applications/Example.app
-xield apps allow /Applications/Example.app
-xield apps remove /Applications/Example.app
-xield firewall set firewall on
-xield firewall set stealth on
+rooklet firewall status
+rooklet apps list
+rooklet apps add /Applications/Example.app
+rooklet apps block /Applications/Example.app
+rooklet apps allow /Applications/Example.app
+rooklet apps remove /Applications/Example.app
+rooklet firewall set firewall on
+rooklet firewall set stealth on
 ```
 
 Replace the example with an installed app. A bundle is resolved through its
@@ -140,49 +139,49 @@ all registered entries for that bundle; Applications actions affect the selected
 entry. These labels describe listed permissions, not an observed packet verdict.
 
 TUI firewall changes require confirmation. Scroll long confirmations with ↑↓,
-Page Up/Down, Home/End, or the mouse wheel to review every target. Xield validates
+Page Up/Down, Home/End, or the mouse wheel to review every target. Rooklet validates
 targets before changing them and verifies each result. Application firewall
 operations are sequential; partial failures identify affected entries.
 Failed operations trigger a status readback. If that readback is unavailable,
 cached firewall controls become unavailable until a successful refresh.
 
-Authentication happens outside terminal raw mode. Xield never collects or stores
+Authentication happens outside terminal raw mode. Rooklet never collects or stores
 passwords, and worker commands use noninteractive `sudo`. Quitting waits for an
-authorized mutation to finish. Applied settings remain after Xield exits.
+authorized mutation to finish. Applied settings remain after Rooklet exits.
 PF helpers retain individual tool deadlines and finish any restoration before
 the supervising process reports output or input errors.
 
 ## Optional network rules
 
-Incoming application permissions work independently of PF. To use Xield's
+Incoming application permissions work independently of PF. To use Rooklet's
 machine-wide network rules, explicitly install its dedicated anchor:
 
 ```sh
-xield network setup
-xield network add 203.0.113.0/24 --name 'Example destination' --action block --direction out
-xield network add any --port 8080 --protocol tcp --direction in --name 'Incoming example'
-xield network status
+rooklet network setup
+rooklet network add 203.0.113.0/24 --name 'Example destination' --action block --direction out
+rooklet network add any --port 8080 --protocol tcp --direction in --name 'Incoming example'
+rooklet network status
 ```
 
 These commands change network policy and may affect connectivity. Setup accepts
 Apple's stock parent PF layout and refuses unsupported custom parent rules.
 Rules match a remote peer: source IP for incoming traffic, destination IP for
 outgoing traffic. The port is the destination service port: local for incoming,
-remote for outgoing. The first matching enabled rule inside Xield's anchor wins.
+remote for outgoing. The first matching enabled rule inside Rooklet's anchor wins.
 
 Press `w` in Network to explore a hypothetical connection. Enter its remote IP,
 TCP/UDP protocol, inbound/outbound direction, destination service port, and
 interface. Results update while you edit. A blank port or interface stays unknown;
-if an earlier rule might depend on that field, Xield reports an undetermined
+if an earlier rule might depend on that field, Rooklet reports an undetermined
 result instead of claiming a later rule wins. This predicts matching inside
-Xield's anchor, not effective enforcement across other anchors or existing states.
+Rooklet's anchor, not effective enforcement across other anchors or existing states.
 
 Read-only CLI diagnostics use saved rules by default, or a JSON rule array supplied
 as a file or with `--stdin`:
 
 ```sh
-xield network check rules.json
-xield network explain rules.json --remote 203.0.113.5 --protocol tcp --direction out --port 443 --interface en0
+rooklet network check rules.json
+rooklet network explain rules.json --remote 203.0.113.5 --protocol tcp --direction out --port 443 --interface en0
 ```
 
 Reading saved rules may require prior `sudo -v`; supplied files need no privileges.
@@ -191,13 +190,13 @@ show these warnings before applying additions, edits, toggles, deletions, or
 reordering; CLI changes and profile checks/apply emit warnings on stderr.
 Partial overlap and coverage by multiple earlier rules are not diagnosed.
 
-Xield preserves other anchors and existing connection states. Established
-connections may therefore continue after a rule changes. To clear Xield's rules
+Rooklet preserves other anchors and existing connection states. Established
+connections may therefore continue after a rule changes. To clear Rooklet's rules
 and release its PF enable reference, or remove the setup:
 
 ```sh
-xield network disable
-xield network remove
+rooklet network disable
+rooklet network remove
 ```
 
 Another service may keep PF enabled. Rules are not automatically reapplied at
@@ -209,13 +208,13 @@ read-only previews, backups, drift checks, persistence, and restoration limits.
 Country lookup is optional. Install the managed database once:
 
 ```sh
-xield geoip update
+rooklet geoip update
 ```
 
 Or press `g` in Settings / click **Update countries**. This explicitly downloads
 [DB-IP Country Lite](https://db-ip.com/db/download/ip-to-country-lite), validates
 it, and atomically installs it at
-`~/Library/Application Support/xield/geoip/Country.mmdb`. No account, API key,
+`~/Library/Application Support/rooklet/geoip/Country.mmdb`. No account, API key,
 or sudo is needed. Later launches load it automatically; a running TUI also
 picks up replacements.
 
@@ -225,7 +224,7 @@ the previous database. Settings shows attribution and database age. The Lite
 database is updated monthly and has reduced coverage and accuracy.
 
 IP geolocation by [DB-IP](https://db-ip.com/), licensed under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Xield uses the
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Rooklet uses the
 unmodified database. Country labels estimate the observed IP's location; CDNs,
 VPNs, proxies, and anycast can make that different from an app's actual service
 location. Local/private peers show `Local`; missing data shows `Unknown`.
@@ -281,7 +280,7 @@ Helpers are grouped by verified app paths; unresolved processes stay separate.
 | `a` / `b` | Review incoming allow/block permissions |
 | `n` | Add an app, draft a rule from a selected Activity peer, or add a Network rule |
 | `s` in Activity | Cycle sorting; click the table's Sort title for the same action |
-| `w` in Network | Explain a hypothetical connection against saved Xield rules |
+| `w` in Network | Explain a hypothetical connection against saved Rooklet rules |
 | `d` | Remove a registered app entry or network rule |
 | `t`, `+` / `-` | Toggle or reorder a network rule |
 | `/`, `Esc` | Search; clear search or cancel a dialog |
@@ -299,13 +298,13 @@ wheel moves selection over lists and scrolls confirmation text. In the network
 editor and explanation dialog, click text fields to focus and choice fields to cycle values.
 
 Mouse navigation needs a terminal with mouse reporting. Capture is suspended
-during authentication and released when Xield exits.
+during authentication and released when Rooklet exits.
 
 `x` requests `SIGTERM`, which an app can ignore. `X` requests `SIGKILL` through a
 separate confirmation. Both list every captured PID and executable path, including
 helpers without traffic. Unsaved work may be lost, and apps may restart.
 
-Termination needs no sudo for your own processes. Xield rechecks ownership and
+Termination needs no sudo for your own processes. Rooklet rechecks ownership and
 kernel process identity before signaling, protects root-owned processes, itself,
 and ancestors, and refuses stale targets. If identity-bound signaling is
 unavailable on the host, termination fails explicitly. Signal delivery does not
@@ -323,7 +322,7 @@ In the profile list, press `e` / click **Export** and enter a new name to save t
 current configuration. Existing profiles are never overwritten. Complete firewall
 status is required; close the dialog and press `u` to unlock privileged reads if
 needed. Profiles are stored as JSON in
-`~/Library/Application Support/xield/profiles/`. Names use up to 64 ASCII letters,
+`~/Library/Application Support/rooklet/profiles/`. Names use up to 64 ASCII letters,
 digits, spaces, underscores, or hyphens. Existing CLI profile files can be placed
 in this directory with a valid name and `.json` extension.
 
@@ -333,16 +332,16 @@ PF setup applies its ordered rules. The review describes any activation changes
 and shadow warnings. Restoration is best effort; ALF changes are not atomic.
 No automatic network switching or startup application is performed.
 
-Before applying, Xield also checks the proposed PF rules against the host's
+Before applying, Rooklet also checks the proposed PF rules against the host's
 interfaces, managed parent layout, trusted files, and PF syntax without changing
 firewall state. The subsequent application still revalidates live state.
 
 The same validation and application logic is available from the CLI:
 
 ```sh
-xield profile export profile.json
-xield profile check profile.json
-xield profile apply profile.json --yes
+rooklet profile export profile.json
+rooklet profile check profile.json
+rooklet profile apply profile.json --yes
 ```
 
 Exports contain incoming settings, registered app entries, and saved network
@@ -372,7 +371,7 @@ Tests do not change the host firewall; PF syntax checks use `pfctl -n`, and nati
 signal tests target only processes they create. GitHub Actions runs checks on macOS.
 
 `make release` builds the Rust toolchain's native macOS target explicitly and
-prints the executable path under `target/<target-triple>/release/xield`.
+prints the executable path under `target/<target-triple>/release/rooklet`.
 `make install` builds and installs that binary into `~/.local/bin`;
 `make uninstall` removes it. Override the destination with
 `make install BIN_DIR="/absolute/path/to/bin"` and the same value for uninstall.
@@ -401,12 +400,12 @@ testing on an Intel Mac.
 
 Contributions are welcome. Follow [AGENTS.md](AGENTS.md), run the checks above,
 and keep live firewall integration tests in an isolated environment. Bug reports
-should include the macOS version, terminal, Xield version, and relevant
-`xield doctor` output. Redact app paths, addresses, and other private information.
+should include the macOS version, terminal, Rooklet version, and relevant
+`rooklet doctor` output. Redact app paths, addresses, and other private information.
 
 ## License
 
-Xield's source code is [MIT licensed](LICENSE). The optional DB-IP country data
+Rooklet's source code is [MIT licensed](LICENSE). The optional DB-IP country data
 has its own [CC BY 4.0 license](https://creativecommons.org/licenses/by/4.0/).
 The synthetic MaxMind database used in tests is Apache 2.0 licensed; its provenance
 and license are retained in [tests/data](tests/data/README.md). Production country

@@ -49,7 +49,7 @@ pub fn run_with_timeout(
     );
     execute(path, args, input, privileged, cancel, false, timeout)
 }
-/// Wait for an authorized Xield transaction helper to finish, including rollback.
+/// Wait for an authorized Rooklet transaction helper to finish, including rollback.
 ///
 /// Only cancellation before launch is honored. The helper must bound its individual
 /// tool calls and reap their children; an outer timeout could kill it during rollback.

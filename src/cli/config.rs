@@ -1,11 +1,11 @@
 //! Bounded JSON configuration input.
 use super::args::InputRules;
 use anyhow::{Context, Result, ensure};
+use rooklet::{model::NetworkRule, network};
 use std::{
     fs,
     io::{self, Read},
 };
-use xield::{model::NetworkRule, network};
 
 pub(super) fn read_bounded(mut reader: impl Read) -> Result<Vec<u8>> {
     let mut data = Vec::new();
