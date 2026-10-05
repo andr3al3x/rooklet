@@ -413,7 +413,8 @@ Logs record operation categories, outcomes, phases, durations, and counts. They
 exclude application paths, names, endpoints, profile contents, command arguments,
 and command output at every level. Privileged helper processes do not inherit
 logging options. Diagnostics are best effort, not an audit trail; review files
-before sharing. See [the event map and logging contract](docs/logging.md).
+before sharing. See
+[ADR 0007's event map and logging contract](docs/adr/0007-private-bounded-diagnostics.md#event-map).
 
 ## Development and packaging
 
@@ -430,6 +431,11 @@ Core never depends on the platform or UI packages. Parsers, subprocess runners,
 and native collection are private implementation modules. Administrator
 requests use typed operations and never prompt from worker subprocesses.
 The internal libraries are workspace packages, not separately published APIs.
+
+The [documentation index](docs/README.md) links the current
+[architecture](docs/architecture.md), [functionality](docs/functional.md), and
+[architectural decision records](docs/adr/README.md). Contribution and documentation
+maintenance rules live in the root [AGENTS.md](AGENTS.md).
 
 ```sh
 make check

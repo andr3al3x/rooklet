@@ -44,6 +44,41 @@ abstractions, and a crate for every backend.
 - Communicate meaningful progress and finish with actual validation and limitations;
   do not claim checks that were not run.
 
+## Documentation maintenance
+
+Use [docs/README.md](docs/README.md) as the documentation index. Consult the
+affected parts of the overviews and relevant accepted ADRs before changing an
+architectural boundary; avoid loading unrelated records.
+
+| Document | Update in the same change when… |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Package ownership/dependencies, runtime/data flow, public boundaries, authentication, persistence/trust, concurrency/cancellation, observation/freshness, or delivery architecture changes |
+| [docs/functional.md](docs/functional.md) | User workflows, commands/options, interaction, privileges, defaults, schemas, supported scope, failure behavior, or product limitations change |
+| README and detailed guides | Onboarding/examples, installation, PF operations, or logging usage changes |
+
+Architectural decisions and trade-offs belong in `docs/adr/`. For significant
+cross-component or policy changes, use [the ADR template](docs/adr/TEMPLATE.md)
+and the next unused `NNNN-kebab-case.md` ID; routine local refactors and bug fixes
+do not need a new record. Follow [the ADR lifecycle](docs/adr/README.md): distinguish
+proposed decisions from adopted ones, preserve accepted history, and supersede
+materially changed choices with a linked new record rather than rewriting their
+original rationale. Update the ADR index and relevant overview links.
+
+Keep architecture and functionality factual about implemented behavior. Do not
+present a proposed ADR as a shipped feature, invent historical approvals/dates,
+or imply validation that was not run. Explain decisions and their defining
+contracts in ADRs; [ADR 0007](docs/adr/0007-private-bounded-diagnostics.md) owns
+logging levels, privacy, storage bounds, and shutdown semantics. Keep user-facing
+operating instructions in README/guides and link to ADR contracts rather than
+maintaining separate copies.
+
+Keep `docs/` tidy: index permanent documents, retain one canonical explanation
+per topic, and remove stale references when moving/removing files. Keep generated
+previews, test logs, archives, and temporary research under ignored `target/`.
+`docs/install.md` is also the packaged README; preserve its standalone links and
+instructions when updating it. Validate local links, anchors, source references,
+command/help examples, ADR metadata/index consistency, and `git diff --check`.
+
 ## Shared safety rules
 
 - Use trusted executable paths and argument arrays; never interpolate user input into shell commands.

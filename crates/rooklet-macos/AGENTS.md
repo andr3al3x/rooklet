@@ -64,8 +64,9 @@ Module paths below are relative to this crate's `src/` directory.
 
 ## Diagnostic logging
 
-Follow the [logging guide](../../docs/logging.md). The executable owns the
-subscriber and sink; this crate emits explicit structured fields only. Use fixed
+Follow [ADR 0007's logging contract](../../docs/adr/0007-private-bounded-diagnostics.md).
+The executable owns the subscriber and sink; this crate emits explicit structured
+fields only. Use fixed
 operation/tool/phase/outcome labels, counts, durations, availability/restoration
 booleans, and numeric status or OS error codes. Never record raw errors,
 arguments, paths, endpoints, process metadata, configurations, profiles, or

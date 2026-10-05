@@ -29,7 +29,7 @@ same behavior requirements when updating those tests.
   operations take precedence over sampling; quitting waits for authorized PF transactions.
 - Keep diagnostics separate from terminal output. Use explicit static categories,
   counts, durations, and outcomes; never log paths, endpoints, configuration, raw
-  arguments/output, process metadata, or error display. Follow [the event map](../docs/logging.md).
+  arguments/output, process metadata, or error display. Follow [ADR 0007's event map](../docs/adr/0007-private-bounded-diagnostics.md#event-map).
 - Keep selection stable as observations reorder or disappear. Freeze activity, resources,
   and captured evidence together while continuing to update current firewall controls.
 - Drive resource collection from actual visibility, inspection, and sorting interest.
