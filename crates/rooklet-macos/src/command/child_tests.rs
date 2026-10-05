@@ -34,25 +34,19 @@ fn exit_observation_retains_pid_until_cleanup_and_preserves_status() {
 
 #[test]
 fn cleanup_stops_descendants_after_the_leader_exits() {
-    let directory = tempfile::tempdir().unwrap();
-    let leaked = directory.path().join("leaked");
+    let mut fixture = crate::command::regression_tests::DescendantFixture::new();
     let mut command = Command::new("/bin/sh");
     command
-        .args([
-            "-c",
-            "(/bin/sleep .4; printf leaked > \"$1\") & exit 7",
-            "fixture",
-        ])
-        .arg(&leaked)
+        .args(fixture.args(true))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     let mut child = ManagedChild::spawn(&mut command).unwrap();
     wait_for_exit(&mut child);
+    fixture.wait_ready();
     assert_eq!(child.finish().unwrap().code(), Some(7));
     drop(child);
-    std::thread::sleep(Duration::from_millis(500));
-    assert!(!leaked.exists(), "descendant survived group cleanup");
+    fixture.assert_closed();
 }
 
 #[test]

@@ -229,10 +229,24 @@ fn apply_permissions_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[derive(Clone, Copy)]
+    enum Failure {
+        Setting(Setting),
+        Network,
+    }
+    impl Failure {
+        fn matches(self, mutation: &Mutation) -> bool {
+            match (self, mutation) {
+                (Self::Setting(expected), Mutation::Setting(actual, _)) => expected == *actual,
+                (Self::Network, Mutation::NetworkRules(_)) => true,
+                _ => false,
+            }
+        }
+    }
     struct Fake {
         snapshot: Snapshot,
         mutations: Vec<Mutation>,
-        fail_at: Option<usize>,
+        fail_next: Option<Failure>,
         fail_readback: bool,
         fail_preflight: bool,
         preflight_drift: bool,
@@ -259,7 +273,11 @@ mod tests {
         }
         fn mutate(&mut self, mutation: Mutation) -> Result<()> {
             self.mutations.push(mutation.clone());
-            if self.fail_at == Some(self.mutations.len()) {
+            if self
+                .fail_next
+                .is_some_and(|failure| failure.matches(&mutation))
+            {
+                self.fail_next = None;
                 anyhow::bail!("injected mutation failure");
             }
             match mutation {
@@ -304,6 +322,18 @@ mod tests {
         let snapshot = Snapshot {
             firewall: Some(Default::default()),
             applications_available: true,
+            applications: vec![
+                Application {
+                    path: "/bin/cat".into(),
+                    name: "Retained".into(),
+                    blocked: false,
+                },
+                Application {
+                    path: "/bin/sh".into(),
+                    name: "Removed".into(),
+                    blocked: false,
+                },
+            ],
             network: rooklet_core::model::NetworkStatus {
                 rules_available: true,
                 configured: true,
@@ -313,6 +343,17 @@ mod tests {
         };
         let mut profile = Profile::from_snapshot(&snapshot);
         profile.firewall.as_mut().unwrap().stealth = true;
+        profile.applications = vec![
+            Application {
+                blocked: true,
+                ..snapshot.applications[0].clone()
+            },
+            Application {
+                path: "/bin/sleep".into(),
+                name: "Added".into(),
+                blocked: false,
+            },
+        ];
         let prepared = Prepared {
             profile,
             baseline: Baseline::capture(&snapshot).unwrap(),
@@ -321,7 +362,7 @@ mod tests {
             Fake {
                 snapshot,
                 mutations: vec![],
-                fail_at: None,
+                fail_next: None,
                 fail_readback: false,
                 fail_preflight: false,
                 preflight_drift: false,
@@ -350,8 +391,47 @@ mod tests {
         apply_with(&mut backend, &prepared).unwrap();
         assert!(backend.snapshot.firewall.unwrap().stealth);
         assert!(backend.snapshot.network.applied);
+        assert_eq!(
+            permissions(&backend.snapshot.applications),
+            permissions(&prepared.profile.applications)
+        );
+        let application_mutations: Vec<_> = backend
+            .mutations
+            .iter()
+            .filter(|mutation| {
+                !matches!(
+                    mutation,
+                    Mutation::Setting(_, _) | Mutation::NetworkRules(_)
+                )
+            })
+            .collect();
+        assert_eq!(application_mutations.len(), 4);
+        for (expected_path, expected_action) in
+            [("/bin/cat", Action::Block), ("/bin/sleep", Action::Allow)]
+        {
+            assert!(
+                application_mutations.iter().any(|mutation| matches!(
+                    mutation,
+                    Mutation::Applications { paths, action } if paths == &[expected_path] && *action == expected_action
+                )),
+                "missing permission for {expected_path}"
+            );
+        }
+        assert!(application_mutations.iter().any(|mutation| matches!(
+            mutation, Mutation::RemoveApplication(path) if path == "/bin/sh"
+        )));
+        let registration = application_mutations.iter().position(|mutation| {
+            matches!(mutation, Mutation::AddApplication(path) if path == "/bin/sleep")
+        }).unwrap();
+        let permission = application_mutations.iter().position(|mutation| {
+            matches!(mutation, Mutation::Applications { paths, .. } if paths == &["/bin/sleep"])
+        }).unwrap();
+        assert!(
+            registration < permission,
+            "register before changing permissions"
+        );
         let (mut backend, prepared) = fixture();
-        backend.fail_at = Some(6);
+        backend.fail_next = Some(Failure::Network);
         let error = transact(&mut backend, &prepared).unwrap_err().to_string();
         assert!(error.contains("network=unchanged and verified"));
         assert_eq!(
@@ -382,7 +462,7 @@ mod tests {
             let mut backend = Fake {
                 snapshot,
                 mutations: vec![],
-                fail_at: None,
+                fail_next: None,
                 fail_readback: false,
                 fail_preflight: false,
                 preflight_drift: false,
@@ -458,7 +538,7 @@ mod tests {
     #[test]
     fn incoming_failure_restores_and_never_touches_inactive_pf() {
         let (mut backend, prepared) = fixture();
-        backend.fail_at = Some(2);
+        backend.fail_next = Some(Failure::Setting(Setting::Stealth));
         let error = transact(&mut backend, &prepared).unwrap_err().to_string();
         assert!(error.contains("incoming=restored and verified"));
         assert!(error.contains("network=untouched"));
@@ -520,8 +600,8 @@ mod tests {
             &mutations[0],
             Mutation::Applications {
                 action: Action::Block,
-                ..
-            }
+                paths,
+            } if paths == &["/registered/Alias.app"]
         ));
     }
     #[test]
@@ -535,7 +615,7 @@ mod tests {
             });
             transact(&mut backend, &prepared).unwrap();
             let (mut backend, prepared) = fixture();
-            backend.fail_at = Some(2);
+            backend.fail_next = Some(Failure::Setting(Setting::Stealth));
             assert!(transact(&mut backend, &prepared).is_err());
             let (mut backend, prepared) = fixture();
             backend.fail_readback = true;

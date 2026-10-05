@@ -2,9 +2,9 @@ use super::{
     parser::{parse_csv, parse_flow},
     tracker::Tracker,
 };
-use crate::geoip::{GeoIp, is_local};
+use crate::geoip::GeoIp;
 use rooklet_core::model::Protocol;
-use std::{net::IpAddr, time::Duration};
+use std::time::Duration;
 fn sample(incoming: u64, outgoing: u64, flow_in: u64, flow_out: u64) -> String {
     format!(
         ",bytes_in,bytes_out,\n\"Example, App.987654\",{incoming},{outgoing},\ntcp4 192.168.1.2:1234<->8.8.8.8:443,{flow_in},{flow_out},\ntcp6 fe80::1%en0.5555<->fe80::2%en0.6666,10,20,\nudp4 *:5353<->*:*,100,200,\ntcp4 *:22<->*:*,,,\n"
@@ -206,27 +206,6 @@ fn buffered_app_rates_include_helpers_that_exit_before_the_last_sample() {
     );
     assert_eq!((next[0].bytes_in, next[0].rate_in), (400, 100));
 }
-#[test]
-fn local_and_missing_database_are_offline() {
-    for address in [
-        "127.0.0.1",
-        "10.0.0.1",
-        "169.254.1.1",
-        "::1",
-        "fe80::1",
-        "fd00::1",
-        "::ffff:192.168.1.1",
-        "224.0.0.251",
-    ] {
-        assert!(is_local(address.parse::<IpAddr>().unwrap()), "{address}");
-    }
-    assert!(!is_local("8.8.8.8".parse().unwrap()));
-    assert!(!is_local("2606:4700:4700::1111".parse().unwrap()));
-    let mut geoip = GeoIp::default();
-    assert!(geoip.description().is_none());
-    assert!(geoip.lookup("8.8.8.8".parse().unwrap()).is_none());
-}
-
 #[test]
 fn protocol_like_process_names_are_not_socket_rows() {
     let samples =

@@ -122,6 +122,9 @@ acquiring an enable reference or changing anchor files/rules. Failed setup/remov
 parent reloads attempt safe file and runtime recovery independently and retain the
 original error alongside each restoration result. Runtime recovery uses captured,
 validated parent source and does not depend on successful managed-file restoration.
+Ordinary apply recovery retains its original failure if restoring the anchor,
+releasing a newly acquired reference, or restoring saved state also fails. It
+retains recorded ownership until anchor restoration and reference release succeed.
 Rooklet's lock serializes its own writers; external PF changes remain possible.
 Apple does not treat PF as a supported product API; the
 [PF compatibility contract](network.md#scope-and-compatibility) describes this limit.

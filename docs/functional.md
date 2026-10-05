@@ -98,6 +98,8 @@ explicit diagnostics. See the [PF guide](network.md).
 
 Setup/removal reload failures attempt safe file and runtime recovery independently
 and report each restoration outcome alongside the original failure.
+Ordinary apply failures also retain their original cause alongside anchor,
+ownership-release, or saved-state restoration failures.
 
 Profiles contain incoming settings, registered applications, and ordered network
 rules. Export requires complete control state and refuses overwrite. Check is

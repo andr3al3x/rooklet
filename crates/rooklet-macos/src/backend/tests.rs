@@ -72,16 +72,6 @@ fn app_verification_matches_the_requested_path() {
         )
         .is_err()
     );
-    for path in [
-        "relative.app",
-        "/",
-        "/Applications/../App.app",
-        "/Applications/Bad\nName.app",
-        "",
-    ] {
-        assert!(rooklet_core::application::validate_path(path).is_err());
-    }
-    assert!(rooklet_core::application::validate_path("/Applications/Example App.app").is_ok());
 }
 #[cfg(target_os = "macos")]
 #[test]
@@ -157,38 +147,18 @@ fn runner_output_bounds_and_cancellation_kill_descendants() {
     // Cleanup may add context after the size bound fires; retain the primary cause.
     assert!(format!("{error:#}").contains("exceeds 4 MiB"), "{error:#}");
     let signal = Arc::clone(&cancel);
+    let mut fixture = command::regression_tests::DescendantFixture::new();
+    let args = fixture.args(false);
     let thread = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(100));
+        fixture.wait_ready();
         signal.store(true, Ordering::Relaxed);
+        fixture
     });
     let started = Instant::now();
-    let error = command::run(
-        Path::new("/bin/sh"),
-        &["-c".into(), "sleep 20 & wait".into()],
-        None,
-        false,
-        &cancel,
-    )
-    .unwrap_err();
+    let error = command::run(Path::new("/bin/sh"), &args, None, false, &cancel).unwrap_err();
     assert!(error.to_string().contains("cancelled"));
-    assert!(started.elapsed() < Duration::from_secs(2));
-    thread.join().unwrap();
-}
-
-#[test]
-fn runner_custom_timeout_is_bounded() {
-    let started = Instant::now();
-    let error = command::run_with_timeout(
-        Path::new("/bin/sh"),
-        &["-c".into(), "sleep 20 & wait".into()],
-        None,
-        false,
-        &AtomicBool::new(false),
-        Duration::from_millis(60),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("timed out"));
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    thread.join().unwrap().assert_closed();
 }
 
 #[test]

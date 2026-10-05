@@ -35,12 +35,24 @@ fn ipv6_and_any_are_explicit_and_disabled_rules_are_omitted() {
     assert!(!compiled.contains(" proto "));
     ipv6.destination = "any".into();
     let compiled = compile_rules(&[ipv6.clone()]).unwrap();
+    let rules: Vec<_> = compiled
+        .lines()
+        .filter(|l| l.starts_with("pass "))
+        .collect();
     assert_eq!(
-        compiled.lines().filter(|l| l.starts_with("pass ")).count(),
-        2
+        rules,
+        [
+            "pass out quick on en0 inet from any to any keep state label \"rooklet_first-rule\"",
+            "pass out quick on en0 inet6 from any to any keep state label \"rooklet_first-rule\"",
+        ]
     );
     ipv6.enabled = false;
-    assert_eq!(compile_rules(&[ipv6]).unwrap().lines().count(), 1);
+    assert!(
+        compile_rules(&[ipv6])
+            .unwrap()
+            .lines()
+            .all(|line| line.trim().is_empty() || line.starts_with('#'))
+    );
 }
 #[test]
 fn rule_order_is_stable_and_names_never_enter_pf_source() {
@@ -97,7 +109,6 @@ fn rule_id_boundary_keeps_namespaced_labels_within_pf_limit() {
     validate_rules(&[boundary.clone()]).unwrap();
     let source = compile_rules(&[boundary.clone()]).unwrap();
     assert!(source.contains(&format!("label \"rooklet_{}\"", boundary.id)));
-    assert_eq!(format!("rooklet_{}", boundary.id).len(), 63);
     boundary.id.push('a');
     boundary.enabled = false;
     let error = validate_rules(&[boundary.clone()]).unwrap_err();

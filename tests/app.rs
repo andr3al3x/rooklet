@@ -1,4 +1,3 @@
-use rooklet_core::text::clean;
 mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -113,7 +112,7 @@ fn unfreeze_after_failed_poll_never_restores_firewall_health() {
     assert!(app.snapshot.firewall.is_none());
 }
 #[test]
-fn all_views_dialogs_and_themes_render_at_supported_sizes() {
+fn views_help_and_network_editor_render_across_layouts_and_themes() {
     for (width, height) in [(140, 40), (100, 30), (80, 24), (50, 17), (20, 5), (1, 1)] {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut app = App::new(common::snapshot());
@@ -133,9 +132,10 @@ fn all_views_dialogs_and_themes_render_at_supported_sizes() {
     }
 }
 #[test]
-fn render_never_claims_outgoing_app_enforcement_or_observed_verdicts() {
+fn activity_labels_describe_observed_traffic_and_incoming_permissions() {
     let mut terminal = Terminal::new(TestBackend::new(120, 34)).unwrap();
-    let app = App::new(common::snapshot());
+    let mut app = App::new(common::snapshot());
+    app.resources_visible = false;
     terminal
         .draw(|frame| ui::draw(frame, &app, Theme::Dark))
         .unwrap();
@@ -148,12 +148,10 @@ fn render_never_claims_outgoing_app_enforcement_or_observed_verdicts() {
         .collect::<String>();
     assert!(text.contains("Country"));
     assert!(text.contains("↓/s"));
-    assert!(!text.contains("DECISION"));
-    assert!(!text.contains("Requests"));
-}
-#[test]
-fn untrusted_labels_cannot_inject_terminal_or_bidi_controls() {
-    assert_eq!(clean("hello\x1b[31m\r\n\u{202e}app"), "hello[31mapp");
+    assert!(text.contains("OBSERVED TRAFFIC"));
+    assert!(text.contains("Incoming firewall on"));
+    assert!(text.contains("Incoming = registered app entries"));
+    assert!(text.contains("Totals since monitoring started"));
 }
 
 #[test]

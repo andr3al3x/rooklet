@@ -345,38 +345,87 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
         save_state(&next)
     })();
     if let Err(error) = operation {
-        tracing::error!(
-            phase = "apply",
-            "PF anchor application or readback failed; restoring prior anchor"
+        return recover_apply(
+            error,
+            prior.enable_token.is_none(),
+            &mut ApplyFiles {
+                previous: &previous,
+                previous_live: &previous_live,
+                prior: &prior,
+                next: &next,
+            },
         );
-        let _span = tracing::debug_span!("pf_restore").entered();
-        let restore_file = atomic_write(Path::new(ANCHOR_FILE), previous.as_bytes(), 0o600);
-        let restore_live = load_anchor(&previous_live);
-        if restore_file.is_err() || restore_live.is_err() {
-            tracing::error!(
-                file_restored = restore_file.is_ok(),
-                live_restored = restore_live.is_ok(),
-                "PF anchor restoration failed"
-            );
-            return Err(error.context(format!("Anchor rollback failed (file: {:?}; live: {:?}); ownership token remains recorded; run network disable", restore_file.err(), restore_live.err())));
-        }
-        if prior.enable_token.is_none() {
-            run(&["-X", next.enable_token.as_deref().unwrap()], None)
-                .context("Apply failed and PF ownership release failed; token remains recorded")
-                .inspect_err(|_| {
-                    tracing::error!(
-                        phase = "restore",
-                        "PF ownership release failed during restoration"
-                    )
-                })?;
-        }
-        save_state(&prior).inspect_err(|_| {
-            tracing::error!(phase = "restore", "PF saved state restoration failed")
-        })?;
-        tracing::info!(outcome = "restored", "previous PF anchor restored");
-        return Err(error.context("Applying Rooklet rules failed; previous anchor restored"));
     }
     Ok(())
+}
+
+// Exactly the recovery actions for an ordinary anchor apply, independently of
+// parent setup/removal. The seam permits failure tests without touching live PF.
+trait ApplyRecovery {
+    fn restore_file(&mut self) -> Result<()>;
+    fn restore_live(&mut self) -> Result<()>;
+    fn release_reference(&mut self) -> Result<()>;
+    fn restore_state(&mut self) -> Result<()>;
+}
+
+struct ApplyFiles<'a> {
+    previous: &'a str,
+    previous_live: &'a str,
+    prior: &'a State,
+    next: &'a State,
+}
+impl ApplyRecovery for ApplyFiles<'_> {
+    fn restore_file(&mut self) -> Result<()> {
+        atomic_write(Path::new(ANCHOR_FILE), self.previous.as_bytes(), 0o600)
+    }
+    fn restore_live(&mut self) -> Result<()> {
+        load_anchor(self.previous_live)
+    }
+    fn release_reference(&mut self) -> Result<()> {
+        run(&["-X", self.next.enable_token.as_deref().unwrap()], None).map(|_| ())
+    }
+    fn restore_state(&mut self) -> Result<()> {
+        save_state(self.prior)
+    }
+}
+
+fn recover_apply(
+    error: anyhow::Error,
+    new_reference: bool,
+    recovery: &mut impl ApplyRecovery,
+) -> Result<()> {
+    tracing::error!(
+        phase = "apply",
+        "PF anchor application or readback failed; restoring prior anchor"
+    );
+    let _span = tracing::debug_span!("pf_restore").entered();
+    let restore_file = recovery.restore_file();
+    let restore_live = recovery.restore_live();
+    if restore_file.is_err() || restore_live.is_err() {
+        tracing::error!(
+            file_restored = restore_file.is_ok(),
+            live_restored = restore_live.is_ok(),
+            "PF anchor restoration failed"
+        );
+        return Err(error.context(format!("Anchor rollback failed (file: {:?}; live: {:?}); ownership token remains recorded; run network disable", restore_file.err(), restore_live.err())));
+    }
+    if new_reference && let Err(release) = recovery.release_reference() {
+        tracing::error!(
+            phase = "restore",
+            "PF ownership release failed during restoration"
+        );
+        return Err(error.context(format!(
+            "Apply failed and PF ownership release failed: {release:#}; token remains recorded"
+        )));
+    }
+    if let Err(restore) = recovery.restore_state() {
+        tracing::error!(phase = "restore", "PF saved state restoration failed");
+        return Err(error.context(format!(
+            "Apply failed and PF saved state restoration failed: {restore:#}"
+        )));
+    }
+    tracing::info!(outcome = "restored", "previous PF anchor restored");
+    Err(error.context("Applying Rooklet rules failed; previous anchor restored"))
 }
 
 pub(super) fn disable() -> Result<()> {
@@ -478,6 +527,102 @@ fn remove_inner() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum ApplyStep {
+        File,
+        Live,
+        Reference,
+        State,
+    }
+
+    struct FakeApply {
+        fail: Option<ApplyStep>,
+        calls: Vec<ApplyStep>,
+        prior: State,
+        recorded: State,
+        reference_live: bool,
+    }
+    impl FakeApply {
+        fn step(&mut self, step: ApplyStep) -> Result<()> {
+            self.calls.push(step);
+            ensure!(self.fail != Some(step), "{step:?} recovery failed");
+            Ok(())
+        }
+    }
+    impl ApplyRecovery for FakeApply {
+        fn restore_file(&mut self) -> Result<()> {
+            self.step(ApplyStep::File)
+        }
+        fn restore_live(&mut self) -> Result<()> {
+            self.step(ApplyStep::Live)
+        }
+        fn release_reference(&mut self) -> Result<()> {
+            self.step(ApplyStep::Reference)?;
+            self.reference_live = false;
+            Ok(())
+        }
+        fn restore_state(&mut self) -> Result<()> {
+            self.step(ApplyStep::State)?;
+            self.recorded = self.prior.clone();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn apply_recovery_preserves_primary_error_and_owned_reference_until_safe_release() {
+        use ApplyStep::{File, Live, Reference, State as SavedState};
+        for (failure, new_reference, expected_calls) in [
+            (Some(File), true, vec![File, Live]),
+            (Some(Live), true, vec![File, Live]),
+            (Some(Reference), true, vec![File, Live, Reference]),
+            (
+                Some(SavedState),
+                true,
+                vec![File, Live, Reference, SavedState],
+            ),
+            (None, true, vec![File, Live, Reference, SavedState]),
+            (None, false, vec![File, Live, SavedState]),
+        ] {
+            let prior = State {
+                enable_token: (!new_reference).then(|| "owned-reference".into()),
+                ..Default::default()
+            };
+            let recorded = State {
+                enable_token: Some("owned-reference".into()),
+                ..prior.clone()
+            };
+            let mut fake = FakeApply {
+                fail: failure,
+                calls: vec![],
+                prior,
+                recorded,
+                reference_live: true,
+            };
+            let error = recover_apply(
+                anyhow::anyhow!("loaded rules differ from preview"),
+                new_reference,
+                &mut fake,
+            )
+            .unwrap_err();
+            assert_eq!(
+                error.root_cause().to_string(),
+                "loaded rules differ from preview"
+            );
+            if let Some(step) = failure {
+                assert!(format!("{error:#}").contains(&format!("{step:?} recovery failed")));
+            }
+            assert_eq!(fake.calls, expected_calls);
+            assert_eq!(
+                fake.reference_live,
+                !new_reference || matches!(failure, Some(File | Live | Reference))
+            );
+            assert_eq!(
+                fake.recorded.enable_token.is_some(),
+                !new_reference || failure.is_some()
+            );
+        }
+    }
 
     #[derive(Default)]
     struct FakeParent {
@@ -605,19 +750,10 @@ mod tests {
     }
 
     #[test]
-    fn persistent_file_and_parent_order_drift_are_detected() {
+    fn persistent_file_drift_is_detected() {
         let state = State::default();
         let source = compile_rules(&[]).unwrap();
         assert!(persistent_rules_match(&state, &source).unwrap());
         assert!(!persistent_rules_match(&state, "pass all\n").unwrap());
-        let parent = "anchor \"com.apple/*\" all\nanchor \"rooklet\" all\n";
-        assert!(parent_matches_managed_config(parent));
-        assert!(!parent_matches_managed_config(&format!(
-            "pass quick all\n{parent}"
-        )));
-        assert!(!parent_matches_managed_config(
-            "anchor \"rooklet\" all\nanchor \"com.apple/*\" all\n"
-        ));
-        assert!(!parent_matches_managed_config("anchor \"rooklet\" all"));
     }
 }

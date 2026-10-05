@@ -95,18 +95,7 @@ fn absent_empty_and_oversized_plist_never_reaches_parser() {
 }
 
 #[test]
-fn lexical_normalization_and_target_bounds_are_strict() {
-    for path in [
-        "/Apps/./Example.app",
-        "/Apps//Example.app",
-        "/Apps/Example.app/",
-        "//Apps/Example.app",
-    ] {
-        assert!(
-            rooklet_core::application::validate_path(path).is_err(),
-            "{path}"
-        );
-    }
+fn application_target_bounds_and_duplicate_targets_are_strict() {
     assert!(validate_application_targets(&[]).is_err());
     assert!(validate_application_targets(&vec!["/one".into(); 257]).is_err());
     let directory = tempfile::tempdir().unwrap();

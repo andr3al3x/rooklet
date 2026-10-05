@@ -1,6 +1,9 @@
 use rooklet_core::{
     application::validate_path,
-    model::{Action, Application, Direction, NetworkStatus, Profile, Protocol, Setting, Snapshot},
+    model::{
+        Action, Application, Direction, FirewallSettings, NetworkRule, NetworkStatus, Profile,
+        Protocol, Setting, Snapshot,
+    },
     profile,
 };
 
@@ -13,6 +16,20 @@ fn snapshot() -> Snapshot {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+fn network_rule() -> NetworkRule {
+    NetworkRule {
+        id: "service".into(),
+        name: "Inbound service".into(),
+        action: Action::Allow,
+        destination: "192.0.2.0/24".into(),
+        port: Some(443),
+        protocol: Protocol::Tcp,
+        direction: Direction::Inbound,
+        interface: Some("en0".into()),
+        enabled: true,
     }
 }
 
@@ -60,6 +77,14 @@ fn choices_parse_exact_existing_spellings() {
 #[test]
 fn profile_roundtrip_does_not_require_registered_files() {
     let mut current = snapshot();
+    current.firewall = Some(FirewallSettings {
+        enabled: true,
+        stealth: true,
+        block_all: false,
+        allow_signed: true,
+        allow_signed_app: false,
+    });
+    current.network.rules.push(network_rule());
     current.applications.push(Application {
         path: "/nonexistent/App".into(),
         name: "App".into(),
@@ -70,6 +95,7 @@ fn profile_roundtrip_does_not_require_registered_files() {
     let parsed = profile::parse(&bytes).unwrap();
     assert_eq!(parsed.applications, current.applications);
     assert_eq!(parsed.firewall, current.firewall);
+    assert_eq!(parsed.network_rules, current.network.rules);
 }
 
 #[test]
@@ -86,6 +112,7 @@ fn byte_limit_rejects_oversized_json_even_with_small_parsed_value() {
 #[test]
 fn strict_schema_rejects_unknown_and_missing_fields_at_each_scope() {
     let mut current = snapshot();
+    current.network.rules.push(network_rule());
     current.applications.push(Application {
         path: "/App".into(),
         name: "App".into(),
@@ -98,12 +125,38 @@ fn strict_schema_rejects_unknown_and_missing_fields_at_each_scope() {
     unknown_firewall["firewall"]["unexpected"] = true.into();
     let mut unknown_app = base.clone();
     unknown_app["applications"][0]["unexpected"] = true.into();
+    let mut unknown_rule = base.clone();
+    unknown_rule["network_rules"][0]["unexpected"] = true.into();
+    let mut missing_firewall = base.clone();
+    missing_firewall["firewall"]
+        .as_object_mut()
+        .unwrap()
+        .remove("stealth");
+    let mut missing_app = base.clone();
+    missing_app["applications"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("blocked");
+    let mut missing_rule = base.clone();
+    missing_rule["network_rules"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("enabled");
     let mut missing_field = base;
     missing_field
         .as_object_mut()
         .unwrap()
         .remove("applications");
-    for value in [unknown_top, unknown_firewall, unknown_app, missing_field] {
+    for value in [
+        unknown_top,
+        unknown_firewall,
+        unknown_app,
+        unknown_rule,
+        missing_field,
+        missing_firewall,
+        missing_app,
+        missing_rule,
+    ] {
         assert!(profile::parse(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 }

@@ -1,7 +1,7 @@
 use rooklet_core::{
     model::{Application, ProcessActivity, Snapshot},
     permissions::{IncomingState, Index, Paths},
-    process::{ProcessIdentity, members_for},
+    process::{MAX_TARGETS, ProcessIdentity, members_for},
     resources::{ProcessReading, ReadingState, Resources, Usage},
 };
 
@@ -137,6 +137,24 @@ fn grouped_targets_require_captured_membership_and_same_owner() {
     let targets = vec![helper.clone(), selected.clone(), foreign, unrelated];
     assert_eq!(members_for(&targets, 10), [selected, helper]);
     assert!(members_for(&targets, 999).is_empty());
+
+    let unbundled = identity(20, "/standalone", None);
+    let same_path = identity(21, "/standalone", None);
+    assert_eq!(
+        members_for(&[unbundled.clone(), same_path], 20),
+        [unbundled]
+    );
+
+    let mut members: Vec<_> = (1..=MAX_TARGETS as u32)
+        .map(|pid| identity(pid, "/helper", Some("/App.app")))
+        .collect();
+    assert_eq!(members_for(&members, 1), members);
+    members.push(identity(
+        MAX_TARGETS as u32 + 1,
+        "/helper",
+        Some("/App.app"),
+    ));
+    assert_eq!(members_for(&members, 1), members);
 }
 
 #[test]

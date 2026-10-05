@@ -178,25 +178,33 @@ fn preview_reads_stdin_without_applying_pf() {
 }
 #[test]
 fn invalid_rules_and_ports_fail_before_authentication() {
-    assert!(
-        !cli()
-            .args(["network", "add", "203.0.113.1", "--port", "0"])
-            .output()
-            .unwrap()
-            .status
-            .success()
-    );
+    let output = cli()
+        .args(["network", "add", "203.0.113.1", "--port", "0"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let diagnostic = String::from_utf8(output.stderr).unwrap();
+    assert!(diagnostic.contains("invalid value '0'"), "{diagnostic}");
+    assert!(diagnostic.contains("--port"), "{diagnostic}");
     let dir = tempdir().unwrap();
     let path = dir.path().join("rules.json");
     fs::write(&path, "[{\"unsupported\":true}]").unwrap();
+    let output = cli()
+        .args(["network", "preview"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let diagnostic = String::from_utf8(output.stderr).unwrap();
     assert!(
-        !cli()
-            .args(["network", "preview"])
-            .arg(&path)
-            .output()
-            .unwrap()
-            .status
-            .success()
+        diagnostic.contains("expected a JSON array of network rules"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("unknown field `unsupported`"),
+        "{diagnostic}"
     );
 }
 

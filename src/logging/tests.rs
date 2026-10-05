@@ -87,7 +87,7 @@ fn preserves_operation_span_fields() {
 }
 
 #[test]
-fn concurrent_sessions_share_directory_and_keep_retention_bounded() {
+fn overlapping_sessions_use_distinct_files_in_the_same_directory() {
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("logs");
     let (first, _) = start(&path, Level::Info, sink::Limits::default()).unwrap();

@@ -1,6 +1,9 @@
 //! Harmless helper fixtures exercise transaction supervision without PF or sudo.
 use crate::command;
 use std::{
+    fs::{File, OpenOptions},
+    io::Read,
+    os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
     path::Path,
     sync::{
         Arc,
@@ -8,6 +11,79 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+/// The fixture's descendants hold a FIFO writer for their whole lifetime.
+/// A readiness byte proves launch; EOF proves every inherited writer closed.
+pub(crate) struct DescendantFixture {
+    directory: tempfile::TempDir,
+    reader: File,
+}
+impl DescendantFixture {
+    pub(crate) fn new() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("lifetime");
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: name is a valid NUL-terminated path in this test's temporary
+        // directory. mkfifo creates only this private fixture endpoint.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let reader = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+            .unwrap();
+        Self { directory, reader }
+    }
+
+    pub(crate) fn args(&self, leader_exits: bool) -> Vec<String> {
+        vec![
+            "-c".into(),
+            if leader_exits {
+                "(exec 3>\"$1\"; printf r >&3; /bin/sleep 10; :) & exit 7"
+            } else {
+                "(exec 3>\"$1\"; printf r >&3; /bin/sleep 10; :) & wait"
+            }
+            .into(),
+            "fixture".into(),
+            self.directory
+                .path()
+                .join("lifetime")
+                .to_str()
+                .unwrap()
+                .into(),
+        ]
+    }
+
+    pub(crate) fn wait_ready(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut byte = [0];
+            match self.reader.read(&mut byte) {
+                Ok(1) => {
+                    assert_eq!(byte, *b"r");
+                    return;
+                }
+                Ok(0) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                result => panic!("fixture readiness failed: {result:?}"),
+            }
+            assert!(Instant::now() < deadline, "descendant did not start");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    pub(crate) fn assert_closed(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match self.reader.read(&mut [0]) {
+                Ok(0) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                result => panic!("fixture lifetime read failed: {result:?}"),
+            }
+            assert!(Instant::now() < deadline, "descendant survived cleanup");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
 
 #[test]
 fn ordinary_runner_refuses_unprivileged_sudo_wrapping() {
@@ -30,28 +106,21 @@ fn ordinary_runner_refuses_unprivileged_sudo_wrapping() {
 
 #[test]
 fn tool_timeout_cleans_descendants_before_returning_to_helper() {
-    let directory = tempfile::tempdir().unwrap();
-    let marker = directory.path().join("survived");
-    let ready = directory.path().join("ready");
+    let mut fixture = DescendantFixture::new();
+    let started = Instant::now();
     let error = command::run_with_timeout(
         Path::new("/bin/sh"),
-        &[
-            "-c".into(),
-            "printf ready > \"$2\"; (/bin/sleep .4; printf survived > \"$1\") & wait".into(),
-            "fixture".into(),
-            marker.to_str().unwrap().into(),
-            ready.to_str().unwrap().into(),
-        ],
+        &fixture.args(false),
         None,
         false,
         &AtomicBool::new(false),
-        Duration::from_millis(150),
+        Duration::from_secs(2),
     )
     .unwrap_err();
     assert!(error.to_string().contains("timed out"));
-    assert!(ready.exists(), "fixture did not start before its deadline");
-    std::thread::sleep(Duration::from_millis(450));
-    assert!(!marker.exists(), "descendant outlived helper tool cleanup");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    fixture.wait_ready();
+    fixture.assert_closed();
 }
 
 #[test]
@@ -80,9 +149,11 @@ fn transaction_finishes_after_cancellation_during_helper() {
     let directory = tempfile::tempdir().unwrap();
     let ready = directory.path().join("ready");
     let complete = directory.path().join("complete");
+    let acknowledged = directory.path().join("cancelled");
     let cancel = Arc::new(AtomicBool::new(false));
     let signal = Arc::clone(&cancel);
     let ready_for_thread = ready.clone();
+    let acknowledgement_for_thread = acknowledged.clone();
     let thread = std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !ready_for_thread.exists() {
@@ -90,16 +161,18 @@ fn transaction_finishes_after_cancellation_during_helper() {
             std::thread::sleep(Duration::from_millis(5));
         }
         signal.store(true, Ordering::Relaxed);
+        std::fs::write(acknowledgement_for_thread, b"cancelled").unwrap();
     });
     let output = command::run_transaction(
         Path::new("/bin/sh"),
         &[
             "-c".into(),
-            "printf ready > \"$1\"; /bin/sleep 0.2; printf restored > \"$2\"; printf finished"
+            "printf ready > \"$1\"; attempt=0; while ! test -f \"$3\"; do test \"$attempt\" -lt 500 || exit 3; attempt=$((attempt+1)); /bin/sleep .01; done; printf restored > \"$2\"; printf finished"
                 .into(),
             "fixture".into(),
             ready.to_str().unwrap().into(),
             complete.to_str().unwrap().into(),
+            acknowledged.to_str().unwrap().into(),
         ],
         None,
         false,

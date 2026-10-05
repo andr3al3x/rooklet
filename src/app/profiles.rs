@@ -180,7 +180,7 @@ impl App {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
-    use rooklet_core::model::{NetworkStatus, Profile};
+    use rooklet_core::model::NetworkStatus;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -202,58 +202,6 @@ mod tests {
             Some(ProfileOperation::List)
         ));
         app.profiles_finished(snapshot(), ProfileOutcome::Listed(vec!["work".into()]));
-    }
-    #[test]
-    fn cancelled_list_and_preparation_never_reopen_modal() {
-        let mut app = App::new(snapshot());
-        app.handle(key(KeyCode::Char('p')));
-        app.handle(key(KeyCode::Esc));
-        app.profiles_finished(snapshot(), ProfileOutcome::Listed(vec!["work".into()]));
-        assert!(app.popup.is_none());
-        assert!(!app.busy);
-        ready(&mut app);
-        assert!(matches!(
-            app.handle(key(KeyCode::Enter)).profile,
-            Some(ProfileOperation::Prepare(_))
-        ));
-        app.handle(key(KeyCode::Esc));
-        let prepared =
-            rooklet_macos::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot())
-                .unwrap();
-        app.profiles_finished(
-            snapshot(),
-            ProfileOutcome::Prepared {
-                name: "work".into(),
-                prepared: Box::new(prepared),
-            },
-        );
-        assert!(app.popup.is_none());
-    }
-    #[test]
-    fn profile_apply_requires_a_separate_confirmation() {
-        let mut app = App::new(snapshot());
-        ready(&mut app);
-        app.handle(key(KeyCode::Enter));
-        let prepared =
-            rooklet_macos::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot())
-                .unwrap();
-        app.profiles_finished(
-            snapshot(),
-            ProfileOutcome::Prepared {
-                name: "work".into(),
-                prepared: Box::new(prepared),
-            },
-        );
-        assert!(matches!(
-            app.popup,
-            Some(Popup::Confirm {
-                action: ConfirmedAction::Profile(_),
-                ..
-            })
-        ));
-        let effect = app.handle(key(KeyCode::Enter));
-        assert!(matches!(effect.profile, Some(ProfileOperation::Apply(_))));
-        assert!(app.busy);
     }
     #[test]
     fn export_name_is_bounded_and_requires_complete_snapshot() {

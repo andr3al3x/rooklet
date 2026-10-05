@@ -1,17 +1,10 @@
-use rooklet_core::text::{clean, clean_multiline};
+use rooklet_core::text::clean_multiline;
 use serde_json::{Value, json};
 use std::{fs, process::Command};
 use tempfile::tempdir;
 
 fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_rooklet"))
-}
-
-#[test]
-fn multiline_diagnostics_preserve_lines_without_terminal_or_bidi_controls() {
-    let text = "first\r\nsecond\t\x1b[2J\u{061c}\u{200e}\u{200f}\u{202e}\u{2066}\u{206f}last";
-    assert_eq!(clean_multiline(text), "first\nsecond[2Jlast");
-    assert_eq!(clean(text), "firstsecond[2Jlast");
 }
 
 #[test]

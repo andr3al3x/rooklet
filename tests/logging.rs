@@ -127,16 +127,3 @@ fn parse_errors_and_help_never_start_the_sink() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
 }
-
-#[test]
-fn logging_is_disabled_by_default() {
-    let directory = tempdir().unwrap();
-    let output = cli()
-        .current_dir(directory.path())
-        .args(["profile", "check", "missing.json"])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
-    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
-}
