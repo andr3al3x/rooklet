@@ -389,6 +389,32 @@ report restoration failures explicitly. Profiles containing network rules
 require prior PF setup. Review exported files before sharing: they contain app
 paths and network policy.
 
+## Diagnostic logging
+
+Logging is optional and writes JSONL files without changing terminal output:
+
+```sh
+rooklet --log-dir "$HOME/Library/Logs/rooklet"
+rooklet --log-dir "$HOME/Library/Logs/rooklet" --log-level debug status
+```
+
+The directory is created private to the current user. An existing directory must
+be private and owned by that user; symlink directories and log files are refused.
+`--log-level` requires `--log-dir` and accepts `error`, `warn`, `info` (default),
+`debug`, and `trace`.
+
+Each run has a file capped at 4 MiB; startup retains the five newest run files.
+Writing uses a bounded queue so disk I/O does not block firewall operations or
+rendering. A final record reports dropped events and write failures when the
+sink remains writable. Shutdown drains logs after terminal restoration and
+backend completion, with a one-second limit for the log writer.
+
+Logs record operation categories, outcomes, phases, durations, and counts. They
+exclude application paths, names, endpoints, profile contents, command arguments,
+and command output at every level. Privileged helper processes do not inherit
+logging options. Diagnostics are best effort, not an audit trail; review files
+before sharing. See [the event map and logging contract](docs/logging.md).
+
 ## Development and packaging
 
 The Cargo workspace contains three packages with one distributed executable:

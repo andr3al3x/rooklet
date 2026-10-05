@@ -15,6 +15,7 @@ use terminal::TerminalSession;
 use worker::{Update, UpdateKind, Worker};
 
 pub(crate) fn run(theme: Theme) -> Result<()> {
+    tracing::debug!("TUI starting");
     let mut worker = Worker::start()?;
     let mut terminal = TerminalSession::start()?;
     let mut app = App::new(Snapshot {
@@ -106,8 +107,12 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
         Ok(())
     })();
     let restored = terminal.suspend();
+    if restored.is_err() {
+        tracing::error!("terminal restoration failed");
+    }
     drop(terminal);
     drop(worker);
+    tracing::debug!("TUI stopped");
     result.and(restored)
 }
 

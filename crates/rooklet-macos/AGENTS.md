@@ -62,6 +62,21 @@ Module paths below are relative to this crate's `src/` directory.
   license/attribution requirements. No background installation on startup.
 - GeoIP test fixtures and provenance/licenses live in `tests/data/` within this crate.
 
+## Diagnostic logging
+
+Follow the [logging guide](../../docs/logging.md). The executable owns the
+subscriber and sink; this crate emits explicit structured fields only. Use fixed
+operation/tool/phase/outcome labels, counts, durations, availability/restoration
+booleans, and numeric status or OS error codes. Never record raw errors,
+arguments, paths, endpoints, process metadata, configurations, profiles, or
+captured stdout/stderr at any level; do not derive fields with blanket
+`#[instrument]` or `Debug`/`Display` of inputs.
+
+Warn on availability transitions rather than every poll. Keep routine
+observations at TRACE with aggregate timing and counts; do not emit individual
+process or connection records. Preserve normal cancellation, transaction
+completion/restoration, and child cleanup behavior while instrumenting them.
+
 ## Validation
 
 Follow the root's safe testing limits. Use fake adapters for transaction failures,

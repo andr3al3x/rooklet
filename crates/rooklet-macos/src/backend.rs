@@ -73,21 +73,46 @@ impl Backend {
 
     pub fn mutate(&mut self, mutation: Mutation) -> Result<()> {
         ensure!(!self.cancel.load(Ordering::Relaxed), "mutation cancelled");
-        match mutation {
-            Mutation::NetworkRules(rules) => {
-                crate::network::request_change(
-                    crate::network::Change::Apply(&rules),
-                    &self.cancel,
-                )?;
+        let operation = match &mutation {
+            Mutation::NetworkRules(_) => "network_rules",
+            Mutation::Setting(_, _) => "incoming_setting",
+            Mutation::Applications { .. } => "incoming_permissions",
+            Mutation::AddApplication(_) => "add_application",
+            Mutation::RemoveApplication(_) => "remove_application",
+        };
+        let _span = tracing::info_span!("backend_mutation", operation).entered();
+        tracing::info!(outcome = "accepted", "firewall change accepted");
+        let result = (|| {
+            match mutation {
+                Mutation::NetworkRules(rules) => {
+                    crate::network::request_change(
+                        crate::network::Change::Apply(&rules),
+                        &self.cancel,
+                    )?;
+                }
+                Mutation::Setting(setting, value) => {
+                    alf::set_setting(setting, value, &self.cancel)?
+                }
+                Mutation::Applications { paths, action } => {
+                    alf::set_applications(&paths, action, &self.cancel)?
+                }
+                Mutation::AddApplication(path) => alf::add_application(&path, &self.cancel)?,
+                Mutation::RemoveApplication(path) => alf::remove_application(&path, &self.cancel)?,
             }
-            Mutation::Setting(setting, value) => alf::set_setting(setting, value, &self.cancel)?,
-            Mutation::Applications { paths, action } => {
-                alf::set_applications(&paths, action, &self.cancel)?
-            }
-            Mutation::AddApplication(path) => alf::add_application(&path, &self.cancel)?,
-            Mutation::RemoveApplication(path) => alf::remove_application(&path, &self.cancel)?,
+            Ok(())
+        })();
+        match &result {
+            Ok(()) => tracing::info!(
+                outcome = "verified",
+                "firewall change completed with readback"
+            ),
+            Err(_) => tracing::error!(
+                operation,
+                outcome = "failed",
+                "firewall change or readback failed"
+            ),
         }
-        Ok(())
+        result
     }
 }
 

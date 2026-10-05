@@ -13,6 +13,8 @@ use std::path::PathBuf;
     about = "A standalone macOS firewall manager and traffic monitor"
 )]
 pub(super) struct Cli {
+    #[command(flatten)]
+    pub(super) logging: crate::logging::Options,
     #[arg(long, value_enum, default_value = "dark", global = true)]
     pub(super) theme: Theme,
     #[command(subcommand)]
@@ -49,6 +51,48 @@ pub(super) enum CliCommand {
         #[command(subcommand)]
         command: ProfileCommand,
     },
+}
+
+impl CliCommand {
+    /// Static categories keep user-provided configuration out of diagnostics.
+    pub(super) fn operation(&self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Doctor => "doctor",
+            Self::Geoip { .. } => "geoip.update",
+            Self::Apps { command } => match command {
+                AppsCommand::List => "apps.list",
+                AppsCommand::Add { .. } => "apps.add",
+                AppsCommand::Allow { .. } => "apps.allow",
+                AppsCommand::Block { .. } => "apps.block",
+                AppsCommand::Remove { .. } => "apps.remove",
+            },
+            Self::Firewall { command } => match command {
+                FirewallCommand::Status => "firewall.status",
+                FirewallCommand::Set { .. } => "firewall.set",
+            },
+            Self::Profile { command } => match command {
+                ProfileCommand::Export { .. } => "profile.export",
+                ProfileCommand::Check { .. } => "profile.check",
+                ProfileCommand::Apply { .. } => "profile.apply",
+            },
+            Self::Network { command } => match command {
+                NetworkCommand::Status => "network.status",
+                NetworkCommand::Check(_) => "network.check",
+                NetworkCommand::Explain { .. } => "network.explain",
+                NetworkCommand::Setup(_) => "network.setup",
+                NetworkCommand::Apply(_) => "network.apply",
+                NetworkCommand::Preview(_) => "network.preview",
+                NetworkCommand::Preflight(_) => "network.preflight",
+                NetworkCommand::Add(_) => "network.add",
+                NetworkCommand::Delete { .. } => "network.delete",
+                NetworkCommand::Toggle { .. } => "network.toggle",
+                NetworkCommand::Move { .. } => "network.move",
+                NetworkCommand::Disable => "network.disable",
+                NetworkCommand::Remove => "network.remove",
+            },
+        }
+    }
 }
 #[derive(Subcommand)]
 pub(super) enum GeoipCommand {

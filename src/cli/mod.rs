@@ -28,6 +28,38 @@ pub(crate) fn run() -> Result<()> {
         }
         std::process::exit(error.exit_code());
     });
+    let logging = cli.logging.start()?;
+    let mode = if cli.command.is_some() { "cli" } else { "tui" };
+    let session = tracing::info_span!("session", mode, version = env!("CARGO_PKG_VERSION"));
+    let result = session.in_scope(|| {
+        tracing::info!("session started");
+        let operation = cli.command.as_ref().map_or("tui", CliCommand::operation);
+        let result =
+            tracing::info_span!("operation", operation, operation_id = 1_u64).in_scope(|| {
+                let started = std::time::Instant::now();
+                tracing::info!("operation started");
+                let result = dispatch(cli);
+                tracing::info!(
+                    success = result.is_ok(),
+                    duration_ms = started.elapsed().as_millis() as u64,
+                    "operation completed"
+                );
+                result
+            });
+        if result.is_ok() {
+            tracing::info!("session completed");
+        } else {
+            // Error display can contain paths or command output; human output owns it.
+            tracing::error!(operation, "session failed");
+        }
+        result
+    });
+    drop(session);
+    logging.finish();
+    result
+}
+
+fn dispatch(cli: Cli) -> Result<()> {
     if let Some(command) = cli.command {
         if let CliCommand::Network { command } = command {
             return network::run(command);

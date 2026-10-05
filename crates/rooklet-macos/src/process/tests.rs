@@ -381,3 +381,29 @@ mod macos {
         assert!(snapshot.iter().any(|process| process.pid == child.0.id()));
     }
 }
+
+#[test]
+fn signal_logs_partial_outcomes_without_process_identity() {
+    let logs = crate::command::regression_tests::capture_logs(|| {
+        let mut target = identity(123456789);
+        target.path = "/PRIVATE_PROCESS_PATH_30d1".into();
+        target.bundle_path = Some("/PRIVATE_BUNDLE_PATH_110d".into());
+        let mut system = Fake::new(std::slice::from_ref(&target));
+        system.failures.push(target.pid);
+        let report = engine::terminate(
+            &mut system,
+            &TerminationRequest {
+                targets: vec![target],
+                mode: TerminationMode::Terminate,
+            },
+        )
+        .unwrap();
+        assert_eq!(report.failures.len(), 1);
+    });
+    assert!(logs.contains("WARN"));
+    assert!(logs.contains("outcome=\"partial\""));
+    assert!(logs.contains("failed_count=1"));
+    assert!(!logs.contains("PRIVATE_"));
+    assert!(!logs.contains("123456789"));
+    assert!(!logs.contains("OS rejected signal"));
+}

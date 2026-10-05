@@ -135,6 +135,7 @@ impl Monitor {
                 };
             }
         };
+        tracing::debug!(outcome = "started", "activity monitor started");
         Ok(Self {
             child,
             stdout,
@@ -176,6 +177,18 @@ impl Monitor {
             }
         })();
         if let Err(error) = result {
+            if cancel.load(Ordering::Relaxed) {
+                tracing::debug!(
+                    outcome = "cancelled",
+                    "activity monitor observation cancelled"
+                );
+            } else {
+                tracing::warn!(
+                    subsystem = "activity",
+                    available = false,
+                    "activity monitor became unavailable"
+                );
+            }
             let error = match self.child.finish() {
                 Ok(_) => error,
                 Err(cleanup) => error.context(format!("nettop cleanup also failed: {cleanup}")),
@@ -238,6 +251,11 @@ impl Monitor {
             }
         }
         if !samples.is_empty() {
+            tracing::trace!(
+                sample_count = samples.len(),
+                bytes_read = read,
+                "activity samples collected"
+            );
             let observed = Instant::now();
             self.latest =
                 self.tracker
@@ -261,6 +279,7 @@ impl Monitor {
         }
         if self.child.exited()? {
             let status = self.child.finish()?;
+            tracing::debug!(exit_code = status.code(), "activity monitor exited");
             bail!(
                 "nettop exited ({status}): {}",
                 String::from_utf8_lossy(&self.errors).trim()
@@ -391,5 +410,26 @@ mod terminal_tests {
         let mut monitor = Monitor::spawn(command).unwrap();
         let mut geoip = GeoIp::default();
         assert!(monitor.poll(&mut geoip, &AtomicBool::new(false)).is_err());
+    }
+    #[test]
+    fn monitor_unavailability_logs_once_without_captured_diagnostics() {
+        let logs = crate::command::regression_tests::capture_logs(|| {
+            let mut command = Command::new("/bin/sh");
+            command.args([
+                "-c",
+                "printf 'PRIVATE_MONITOR_DIAGNOSTIC_335e' >&2; exit 11",
+            ]);
+            let mut monitor = Monitor::spawn(command).unwrap();
+            let mut geoip = GeoIp::default();
+            let cancel = AtomicBool::new(false);
+            assert!(monitor.poll(&mut geoip, &cancel).is_err());
+            assert!(monitor.poll(&mut geoip, &cancel).is_err());
+        });
+        assert_eq!(
+            logs.matches("activity monitor became unavailable").count(),
+            1
+        );
+        assert!(!logs.contains("PRIVATE_"));
+        assert!(!logs.contains("/bin/sh"));
     }
 }

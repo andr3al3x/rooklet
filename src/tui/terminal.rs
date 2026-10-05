@@ -18,7 +18,9 @@ impl TerminalSession {
             Ok(terminal) => terminal,
             Err(error) => {
                 // Initialization can fail after entering raw mode or the alternate screen.
-                let _ = ratatui::try_restore();
+                if ratatui::try_restore().is_err() {
+                    tracing::warn!("terminal initialization cleanup failed");
+                }
                 return Err(error).context("cannot initialize terminal");
             }
         };
@@ -64,6 +66,8 @@ impl TerminalSession {
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        let _ = self.suspend();
+        if self.suspend().is_err() {
+            tracing::warn!("terminal fallback restoration failed");
+        }
     }
 }

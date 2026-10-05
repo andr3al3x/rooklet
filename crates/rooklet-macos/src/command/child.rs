@@ -82,6 +82,18 @@ impl ManagedChild {
 
     /// Clean the group before reaping, including descendants of an exited leader.
     pub(crate) fn finish(&mut self) -> io::Result<ExitStatus> {
+        let result = self.finish_inner();
+        if let Err(error) = &result {
+            tracing::warn!(
+                errno = error.raw_os_error(),
+                outcome = "failed",
+                "managed child cleanup failed"
+            );
+        }
+        result
+    }
+
+    fn finish_inner(&mut self) -> io::Result<ExitStatus> {
         if let Some(status) = self.status {
             return Ok(status);
         }
@@ -168,7 +180,10 @@ fn no_child() -> io::Error {
 
 impl Drop for ManagedChild {
     fn drop(&mut self) {
-        self.stop();
+        if self.child.is_some() {
+            tracing::debug!(phase = "drop", "managed child fallback cleanup");
+            self.stop();
+        }
     }
 }
 

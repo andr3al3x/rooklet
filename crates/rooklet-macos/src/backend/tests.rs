@@ -154,7 +154,8 @@ fn runner_output_bounds_and_cancellation_kill_descendants() {
         &cancel,
     )
     .unwrap_err();
-    assert!(error.to_string().contains("exceeds 4 MiB"));
+    // Cleanup may add context after the size bound fires; retain the primary cause.
+    assert!(format!("{error:#}").contains("exceeds 4 MiB"), "{error:#}");
     let signal = Arc::clone(&cancel);
     let thread = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(100));

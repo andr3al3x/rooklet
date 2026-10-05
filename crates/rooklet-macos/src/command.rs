@@ -64,8 +64,19 @@ pub(crate) fn run_transaction(
     privileged: bool,
     cancel: &AtomicBool,
 ) -> Result<String> {
-    transaction::run(prepare(path, args, input, privileged, cancel)?, input)
-        .with_context(|| format!("{} transaction helper", path.display()))
+    let _span =
+        tracing::debug_span!("transaction_helper", tool = tool_class(path), privileged).entered();
+    let started = Instant::now();
+    let result = (|| {
+        transaction::run(prepare(path, args, input, privileged, cancel)?, input)
+            .with_context(|| format!("{} transaction helper", path.display()))
+    })();
+    tracing::debug!(
+        duration_ms = started.elapsed().as_millis() as u64,
+        success = result.is_ok(),
+        "transaction helper supervision completed"
+    );
+    result
 }
 
 fn prepare(
@@ -83,7 +94,13 @@ fn prepare(
         input.is_none_or(|data| data.len() <= LIMIT),
         "command input exceeds 4 MiB"
     );
-    ensure!(!cancel.load(Ordering::Relaxed), "command cancelled");
+    if cancel.load(Ordering::Relaxed) {
+        tracing::debug!(
+            outcome = "cancelled_before_launch",
+            "command launch cancelled"
+        );
+        bail!("command cancelled");
+    }
     let mut command = if privileged && !is_root() {
         let mut command = Command::new("/usr/bin/sudo");
         command.args(["-n", "--"]).arg(path);
@@ -113,64 +130,100 @@ fn execute(
     combined: bool,
     timeout: Duration,
 ) -> Result<String> {
-    let mut child = ManagedChild::spawn(&mut prepare(path, args, input, privileged, cancel)?)
-        .with_context(|| format!("unable to start {}", path.display()))?;
+    let _span = tracing::debug_span!("subprocess", tool = tool_class(path), privileged).entered();
+    let started = Instant::now();
     let result = (|| {
-        let mut stdout = child.take_stdout().context("command stdout unavailable")?;
-        let mut stderr = child.take_stderr().context("command stderr unavailable")?;
-        nonblocking(&stdout)?;
-        nonblocking(&stderr)?;
-        let mut stdin = child.take_stdin();
-        if let Some(pipe) = &stdin {
-            nonblocking(pipe)?;
-        }
-        let mut sent = 0;
-        let data = input.unwrap_or_default();
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        let deadline = Instant::now() + timeout;
-        loop {
-            ensure!(!cancel.load(Ordering::Relaxed), "command cancelled");
-            ensure!(
-                Instant::now() < deadline,
-                "command timed out after {timeout:?}"
-            );
-            if let Some(pipe) = &mut stdin {
-                match pipe.write(&data[sent..]) {
-                    Ok(n) => sent += n,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                    Err(error) => return Err(error).context("command input failed"),
-                }
-                if sent == data.len() {
-                    stdin.take();
-                }
+        let mut child = ManagedChild::spawn(&mut prepare(path, args, input, privileged, cancel)?)
+            .with_context(|| format!("unable to start {}", path.display()))?;
+        let result = (|| {
+            let mut stdout = child.take_stdout().context("command stdout unavailable")?;
+            let mut stderr = child.take_stderr().context("command stderr unavailable")?;
+            nonblocking(&stdout)?;
+            nonblocking(&stderr)?;
+            let mut stdin = child.take_stdin();
+            if let Some(pipe) = &stdin {
+                nonblocking(pipe)?;
             }
-            let done_out = drain(&mut stdout, &mut out)?;
-            let done_err = drain(&mut stderr, &mut err)?;
-            if child.exited().context("command wait failed")? && done_out && done_err {
-                let status = child.finish().context("command cleanup failed")?;
-                if !status.success() {
-                    let detail = String::from_utf8_lossy(&err);
-                    bail!("{} failed ({}): {}", path.display(), status, detail.trim());
+            let mut sent = 0;
+            let data = input.unwrap_or_default();
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            let deadline = Instant::now() + timeout;
+            loop {
+                if cancel.load(Ordering::Relaxed) {
+                    tracing::debug!(outcome = "cancelled", "running command cancelled");
+                    bail!("command cancelled");
                 }
-                if combined {
-                    ensure!(
-                        out.len() + err.len() <= LIMIT,
-                        "combined command output exceeds 4 MiB"
+                if Instant::now() >= deadline {
+                    tracing::warn!(
+                        tool = tool_class(path),
+                        outcome = "timeout",
+                        timeout_ms = timeout.as_millis() as u64,
+                        "command deadline reached"
                     );
-                    out.extend_from_slice(&err);
+                    bail!("command timed out after {timeout:?}");
                 }
-                return String::from_utf8(out).context("command output is not UTF-8");
+                if let Some(pipe) = &mut stdin {
+                    match pipe.write(&data[sent..]) {
+                        Ok(n) => sent += n,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                        Err(error) => return Err(error).context("command input failed"),
+                    }
+                    if sent == data.len() {
+                        stdin.take();
+                    }
+                }
+                let done_out = drain(&mut stdout, &mut out)?;
+                let done_err = drain(&mut stderr, &mut err)?;
+                if child.exited().context("command wait failed")? && done_out && done_err {
+                    let status = child.finish().context("command cleanup failed")?;
+                    tracing::debug!(
+                        exit_code = status.code(),
+                        success = status.success(),
+                        "command exited"
+                    );
+                    if !status.success() {
+                        let detail = String::from_utf8_lossy(&err);
+                        bail!("{} failed ({}): {}", path.display(), status, detail.trim());
+                    }
+                    if combined {
+                        ensure!(
+                            out.len() + err.len() <= LIMIT,
+                            "combined command output exceeds 4 MiB"
+                        );
+                        out.extend_from_slice(&err);
+                    }
+                    return String::from_utf8(out).context("command output is not UTF-8");
+                }
+                std::thread::sleep(Duration::from_millis(15));
             }
-            std::thread::sleep(Duration::from_millis(15));
+        })();
+        match result {
+            Ok(output) => Ok(output),
+            Err(error) => match child.finish() {
+                Ok(_) => Err(error),
+                Err(cleanup) => {
+                    Err(error.context(format!("command cleanup also failed: {cleanup}")))
+                }
+            },
         }
     })();
-    match result {
-        Ok(output) => Ok(output),
-        Err(error) => match child.finish() {
-            Ok(_) => Err(error),
-            Err(cleanup) => Err(error.context(format!("command cleanup also failed: {cleanup}"))),
-        },
+    tracing::debug!(
+        duration_ms = started.elapsed().as_millis() as u64,
+        success = result.is_ok(),
+        "command supervision completed"
+    );
+    result
+}
+
+// Classify only trusted tool paths. Never record executable paths or arguments.
+fn tool_class(path: &Path) -> &'static str {
+    match path.to_str() {
+        Some("/usr/libexec/ApplicationFirewall/socketfilterfw") => "socketfilterfw",
+        Some("/sbin/pfctl") => "pfctl",
+        Some("/usr/bin/plutil") => "plutil",
+        Some("/usr/bin/nettop") => "nettop",
+        _ => "other",
     }
 }
 
@@ -230,4 +283,4 @@ fn drain(pipe: &mut impl Read, output: &mut Vec<u8>) -> Result<bool> {
 
 #[cfg(test)]
 #[path = "command/tests.rs"]
-mod regression_tests;
+pub(crate) mod regression_tests;

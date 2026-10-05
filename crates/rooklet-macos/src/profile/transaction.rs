@@ -24,26 +24,42 @@ pub(super) fn apply(backend: &mut Backend, prepared: &Prepared) -> Result<()> {
     apply_with(backend, prepared)
 }
 fn apply_with(backend: &mut impl Operations, prepared: &Prepared) -> Result<()> {
-    let before = Baseline::capture(&backend.snapshot()?)?;
-    ensure!(
-        prepared.baseline.same_configuration(&before),
-        "configuration changed since profile review; review the profile again"
+    let _span = tracing::info_span!("profile_transaction").entered();
+    tracing::info!(
+        outcome = "accepted",
+        "reviewed profile application accepted"
     );
-    // Recheck targets before the first mutation, including after authentication.
-    for app in &prepared.profile.applications {
-        backend_path_check(&app.path)?;
-    }
-    if before.configured {
-        backend
-            .preflight_network(&prepared.profile.network_rules)
-            .context("network profile preflight failed; no profile scopes were changed")?;
-        let after_preflight = Baseline::capture(&backend.snapshot()?)?;
+    let result = (|| {
+        tracing::debug!(phase = "baseline", "checking reviewed profile baseline");
+        let before = Baseline::capture(&backend.snapshot()?)?;
         ensure!(
-            prepared.baseline.same_configuration(&after_preflight),
-            "configuration changed during profile preflight; review the profile again"
+            prepared.baseline.same_configuration(&before),
+            "configuration changed since profile review; review the profile again"
+        );
+        // Recheck targets before the first mutation, including after authentication.
+        for app in &prepared.profile.applications {
+            backend_path_check(&app.path)?;
+        }
+        if before.configured {
+            tracing::debug!(phase = "preflight", "validating profile network scope");
+            backend
+                .preflight_network(&prepared.profile.network_rules)
+                .context("network profile preflight failed; no profile scopes were changed")?;
+            let after_preflight = Baseline::capture(&backend.snapshot()?)?;
+            ensure!(
+                prepared.baseline.same_configuration(&after_preflight),
+                "configuration changed during profile preflight; review the profile again"
+            );
+        }
+        transact(backend, prepared)
+    })();
+    if result.is_err() {
+        tracing::error!(
+            outcome = "failed",
+            "profile validation, application, or readback failed"
         );
     }
-    transact(backend, prepared)
+    result
 }
 fn backend_path_check(path: &str) -> Result<()> {
     crate::application::validate_existing_path(path)
@@ -52,25 +68,47 @@ fn transact(backend: &mut impl Operations, prepared: &Prepared) -> Result<()> {
     let before = &prepared.baseline;
     let mut network_attempted = false;
     let operation = (|| -> Result<()> {
+        tracing::debug!(phase = "incoming", "applying profile incoming scope");
         apply_permissions_with(&before.applications, &prepared.profile, &mut |mutation| {
             backend.mutate(mutation)
         })?;
         if before.configured {
             network_attempted = true;
+            tracing::debug!(phase = "network", "applying profile network scope");
             backend.mutate(Mutation::NetworkRules(
                 prepared.profile.network_rules.clone(),
             ))?;
         }
+        tracing::debug!(phase = "readback", "verifying profile application");
         verify_profile(&backend.snapshot()?, &prepared.profile, before.configured)?;
+        tracing::info!(outcome = "verified", "profile scopes verified");
         Ok(())
     })();
     if let Err(error) = operation {
+        tracing::error!(
+            outcome = "failed",
+            "profile scope application or readback failed; restoring baseline"
+        );
+        let _span = tracing::debug_span!("profile_restore", network_attempted).entered();
         let incoming = restore_permissions(backend, &before.profile());
         let network = if network_attempted {
             restore_network(backend, before)
         } else {
             Ok("untouched".into())
         };
+        if incoming.is_err() || network.is_err() {
+            tracing::error!(
+                incoming_restored = incoming.is_ok(),
+                network_restored = network.is_ok(),
+                "profile restoration failed"
+            );
+        } else {
+            tracing::info!(
+                outcome = "restored",
+                network_attempted,
+                "profile baseline restoration verified"
+            );
+        }
         bail!(
             "profile apply failed: {error}; restoration: incoming={}, network={}",
             report(incoming),
@@ -485,5 +523,36 @@ mod tests {
                 ..
             }
         ));
+    }
+    #[test]
+    fn profile_logs_verified_and_restoration_outcomes_without_configuration() {
+        let logs = crate::command::regression_tests::capture_logs(|| {
+            let (mut backend, mut prepared) = fixture();
+            prepared.profile.applications.push(Application {
+                path: "/PRIVATE_PROFILE_APPLICATION_5cde".into(),
+                name: "PRIVATE_PROFILE_NAME_ae34".into(),
+                blocked: false,
+            });
+            transact(&mut backend, &prepared).unwrap();
+            let (mut backend, prepared) = fixture();
+            backend.fail_at = Some(2);
+            assert!(transact(&mut backend, &prepared).is_err());
+            let (mut backend, prepared) = fixture();
+            backend.fail_readback = true;
+            assert!(transact(&mut backend, &prepared).is_err());
+        });
+        assert!(
+            logs.contains("outcome=\"verified\""),
+            "captured logs: {logs}"
+        );
+        assert!(
+            logs.contains("outcome=\"restored\""),
+            "captured logs: {logs}"
+        );
+        assert!(logs.contains("profile restoration failed"));
+        assert!(logs.contains("ERROR"));
+        assert!(!logs.contains("PRIVATE_"));
+        assert!(!logs.contains("injected mutation failure"));
+        assert!(!logs.contains("readback unavailable"));
     }
 }

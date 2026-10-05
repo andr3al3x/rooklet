@@ -117,7 +117,32 @@ impl GeoIp {
 
 /// Fetch only the monthly provider archive. Observed endpoint addresses stay offline.
 pub fn update(cancel: &AtomicBool) -> Result<String> {
-    download::update(cancel)
+    let _span = tracing::info_span!("geoip_update").entered();
+    tracing::info!(
+        outcome = "accepted",
+        "explicit country database update requested"
+    );
+    let started = std::time::Instant::now();
+    let result = download::update(cancel);
+    let duration_ms = started.elapsed().as_millis() as u64;
+    match &result {
+        Ok(_) => tracing::info!(
+            outcome = "installed",
+            duration_ms,
+            "country database update completed"
+        ),
+        Err(_) if cancel.load(std::sync::atomic::Ordering::Relaxed) => tracing::debug!(
+            outcome = "cancelled",
+            duration_ms,
+            "country database update cancelled"
+        ),
+        Err(_) => tracing::error!(
+            outcome = "failed",
+            duration_ms,
+            "country database update failed"
+        ),
+    }
+    result
 }
 
 pub(crate) fn is_local(ip: IpAddr) -> bool {

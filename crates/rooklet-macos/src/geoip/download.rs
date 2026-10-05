@@ -52,7 +52,13 @@ pub(super) enum Download {
 }
 pub(super) fn check(cancel: &AtomicBool, deadline: Instant) -> Result<()> {
     ensure!(!cancel.load(Ordering::Relaxed), "GeoIP update cancelled");
-    ensure!(Instant::now() < deadline, "GeoIP update timed out");
+    if Instant::now() >= deadline {
+        tracing::warn!(
+            outcome = "timeout",
+            "country database update deadline reached"
+        );
+        bail!("GeoIP update timed out");
+    }
     Ok(())
 }
 fn fetch(url: &str, cancel: &AtomicBool, deadline: Instant) -> Result<Download> {
@@ -80,6 +86,10 @@ fn fetch(url: &str, cancel: &AtomicBool, deadline: Instant) -> Result<Download> 
         .call()
         .context("cannot download DB-IP Country Lite over HTTPS")?;
     check(cancel, deadline)?;
+    tracing::debug!(
+        http_status = response.status().as_u16(),
+        "country database provider responded"
+    );
     if response.status().as_u16() == 404 {
         return Ok(Download::NotFound);
     }
@@ -165,9 +175,19 @@ pub(super) fn update_with(
             }
         },
     };
+    tracing::debug!(
+        archive_bytes = archive.len(),
+        phase = "validate",
+        "validating country database download"
+    );
     let bytes = decode(&archive, cancel, deadline)?;
     let reader = database::validate_source(&bytes, cancel, deadline)?;
     let description = database::description(reader.metadata.build_epoch);
+    tracing::debug!(
+        database_bytes = bytes.len(),
+        phase = "install",
+        "installing validated country database"
+    );
     database::install(path, &bytes, cancel, deadline)?;
     Ok(format!(
         "Installed {description} at {}\nIP Geolocation by DB-IP.com: https://db-ip.com · License: https://creativecommons.org/licenses/by/4.0/",

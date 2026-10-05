@@ -116,6 +116,11 @@ mod unix {
         // No cancellation, outer deadline, or I/O error kills the transaction.
         // Once it exits, inherited pipe handles cannot keep supervision waiting.
         let status = status.unwrap().context("transaction wait failed")?;
+        tracing::debug!(
+            exit_code = status.code(),
+            success = status.success(),
+            "transaction helper exited"
+        );
         if !status.success() {
             let detail = String::from_utf8_lossy(&err.bytes);
             let truncated = if out.overflow || err.overflow {
@@ -124,6 +129,19 @@ mod unix {
                 ""
             };
             bail!("helper failed ({status}){truncated}: {}", detail.trim());
+        }
+        if input_error.is_some()
+            || out.error.is_some()
+            || err.error.is_some()
+            || out.overflow
+            || err.overflow
+        {
+            tracing::warn!(
+                input_failed = input_error.is_some(),
+                output_failed = out.error.is_some() || err.error.is_some(),
+                output_overflow = out.overflow || err.overflow,
+                "transaction helper completed with supervision failures"
+            );
         }
         if let Some(error) = input_error {
             return Err(error).context("transaction input failed");

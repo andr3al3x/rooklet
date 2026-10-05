@@ -71,6 +71,7 @@ pub(super) fn setup(rules: &[NetworkRule]) -> Result<()> {
     setup_inner(rules)
 }
 fn setup_inner(rules: &[NetworkRule]) -> Result<()> {
+    let _span = tracing::debug_span!("pf_lifecycle", phase = "setup").entered();
     let compiled = compile_rules(rules)?;
     verify_interfaces(rules)?;
     trusted_parents(Path::new(CONFIG))?;
@@ -138,10 +139,24 @@ fn setup_inner(rules: &[NetworkRule]) -> Result<()> {
         );
     }
     if let Err(error) = run(&["-f", CONFIG], None) {
-        atomic_write(Path::new(CONFIG), original.as_bytes(), config_mode)?;
+        tracing::error!(
+            phase = "reload",
+            "PF parent reload failed; restoring prior configuration"
+        );
+        atomic_write(Path::new(CONFIG), original.as_bytes(), config_mode).inspect_err(|_| {
+            tracing::error!(
+                phase = "restore",
+                "PF parent configuration restoration failed"
+            )
+        })?;
         restore_anchor(previous_anchor.as_deref())?;
         // A failed PF reload may have partially changed live rules; restoring the validated original is necessary.
         let rollback = run(&["-f", CONFIG], None);
+        if rollback.is_err() {
+            tracing::error!(phase = "restore", "PF runtime restoration failed");
+        } else {
+            tracing::info!(outcome = "restored", "PF runtime configuration restored");
+        }
         return Err(error.context(format!(
             "PF setup failed; restored config from {}. Runtime restore: {:?}",
             backup.display(),
@@ -151,12 +166,20 @@ fn setup_inner(rules: &[NetworkRule]) -> Result<()> {
     apply_inner(rules).with_context(|| format!("Parent anchor installed (backup: {}), but applying rules failed; run network disable or retry apply", backup.display()))
 }
 fn restore_anchor(previous: Option<&str>) -> Result<()> {
-    if let Some(previous) = previous {
-        atomic_write(Path::new(ANCHOR_FILE), previous.as_bytes(), 0o600)
+    let result = (|| {
+        if let Some(previous) = previous {
+            atomic_write(Path::new(ANCHOR_FILE), previous.as_bytes(), 0o600)
+        } else {
+            trusted(Path::new(ANCHOR_FILE), false)?;
+            fs::remove_file(ANCHOR_FILE).map_err(Into::into)
+        }
+    })();
+    if result.is_err() {
+        tracing::error!(phase = "restore", "PF persistent anchor restoration failed");
     } else {
-        trusted(Path::new(ANCHOR_FILE), false)?;
-        fs::remove_file(ANCHOR_FILE).map_err(Into::into)
+        tracing::debug!(phase = "restore", "PF persistent anchor restored");
     }
+    result
 }
 
 pub(super) fn apply(rules: &[NetworkRule]) -> Result<()> {
@@ -165,6 +188,7 @@ pub(super) fn apply(rules: &[NetworkRule]) -> Result<()> {
     apply_inner(rules)
 }
 fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
+    let _span = tracing::debug_span!("pf_lifecycle", phase = "apply").entered();
     let super::preflight::Validated {
         source: compiled,
         expected,
@@ -185,6 +209,12 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
         next.enable_token = Some(acquire_token()?);
         if let Err(error) = save_state(&next) {
             let release = run(&["-X", next.enable_token.as_deref().unwrap()], None);
+            if release.is_err() {
+                tracing::error!(
+                    phase = "restore",
+                    "PF ownership release failed after persistence failure"
+                );
+            }
             return Err(error.context(format!(
                 "Could not persist PF ownership token {}; token release: {:?}",
                 next.enable_token.as_deref().unwrap(),
@@ -202,20 +232,44 @@ fn apply_inner(rules: &[NetworkRule]) -> Result<()> {
             actual == expected,
             "PF loaded rules differ from the validated preview; refusing to record them as applied"
         );
+        tracing::info!(
+            outcome = "verified",
+            rule_count = rules.len(),
+            "PF loaded anchor readback verified"
+        );
         next.loaded_rules = Some(expected);
         save_state(&next)
     })();
     if let Err(error) = operation {
+        tracing::error!(
+            phase = "apply",
+            "PF anchor application or readback failed; restoring prior anchor"
+        );
+        let _span = tracing::debug_span!("pf_restore").entered();
         let restore_file = atomic_write(Path::new(ANCHOR_FILE), previous.as_bytes(), 0o600);
         let restore_live = load_anchor(&previous_live);
         if restore_file.is_err() || restore_live.is_err() {
+            tracing::error!(
+                file_restored = restore_file.is_ok(),
+                live_restored = restore_live.is_ok(),
+                "PF anchor restoration failed"
+            );
             return Err(error.context(format!("Anchor rollback failed (file: {:?}; live: {:?}); ownership token remains recorded; run network disable", restore_file.err(), restore_live.err())));
         }
         if prior.enable_token.is_none() {
             run(&["-X", next.enable_token.as_deref().unwrap()], None)
-                .context("Apply failed and PF ownership release failed; token remains recorded")?;
+                .context("Apply failed and PF ownership release failed; token remains recorded")
+                .inspect_err(|_| {
+                    tracing::error!(
+                        phase = "restore",
+                        "PF ownership release failed during restoration"
+                    )
+                })?;
         }
-        save_state(&prior)?;
+        save_state(&prior).inspect_err(|_| {
+            tracing::error!(phase = "restore", "PF saved state restoration failed")
+        })?;
+        tracing::info!(outcome = "restored", "previous PF anchor restored");
         return Err(error.context("Applying Rooklet rules failed; previous anchor restored"));
     }
     Ok(())
@@ -227,6 +281,7 @@ pub(super) fn disable() -> Result<()> {
     disable_inner()
 }
 fn disable_inner() -> Result<()> {
+    let _span = tracing::debug_span!("pf_lifecycle", phase = "disable").entered();
     prepare_state()?;
     let mut state = read_state()?;
     // An empty anchor clears only Rooklet rules. Never flush states or disable global PF.
@@ -271,6 +326,7 @@ pub(super) fn remove() -> Result<()> {
     remove_inner()
 }
 fn remove_inner() -> Result<()> {
+    let _span = tracing::debug_span!("pf_lifecycle", phase = "remove").entered();
     trusted_parents(Path::new(CONFIG))?;
     trusted(Path::new(CONFIG), false)?;
     let config_mode = fs::metadata(CONFIG)?.permissions().mode() & 0o777;
@@ -288,8 +344,22 @@ fn remove_inner() -> Result<()> {
     disable_inner()?;
     atomic_write(Path::new(CONFIG), updated.as_bytes(), config_mode)?;
     if let Err(error) = run(&["-f", CONFIG], None) {
-        atomic_write(Path::new(CONFIG), original.as_bytes(), config_mode)?;
+        tracing::error!(
+            phase = "reload",
+            "PF parent reload failed; restoring prior configuration"
+        );
+        atomic_write(Path::new(CONFIG), original.as_bytes(), config_mode).inspect_err(|_| {
+            tracing::error!(
+                phase = "restore",
+                "PF parent configuration restoration failed"
+            )
+        })?;
         let rollback = run(&["-f", CONFIG], None);
+        if rollback.is_err() {
+            tracing::error!(phase = "restore", "PF runtime restoration failed");
+        } else {
+            tracing::info!(outcome = "restored", "PF runtime configuration restored");
+        }
         return Err(error.context(format!("Removal reload failed; parent config restored (backup: {}). Rooklet remains disabled. Runtime restore: {:?}", backup.display(), rollback.err())));
     }
     trusted(Path::new(ANCHOR_FILE), false)?;

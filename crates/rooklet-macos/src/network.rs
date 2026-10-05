@@ -70,24 +70,34 @@ pub fn request_change(change: Change<'_>, cancel: &AtomicBool) -> Result<()> {
         Change::Disable => ("disable", None),
         Change::Remove => ("remove", None),
     };
+    let _span = tracing::info_span!("pf_change", operation = action).entered();
+    tracing::debug!(phase = "validation", "validating PF change request");
     if let Some(rules) = rules {
         validate_rules(rules)?;
     }
-    if command::is_root() {
-        return match change {
-            Change::Setup(rules) => lifecycle::setup(rules),
-            Change::Apply(rules) => lifecycle::apply(rules),
-            Change::Disable => lifecycle::disable(),
-            Change::Remove => lifecycle::remove(),
-        };
+    tracing::info!(outcome = "accepted", "PF change accepted");
+    let result = (|| {
+        if command::is_root() {
+            return match change {
+                Change::Setup(rules) => lifecycle::setup(rules),
+                Change::Apply(rules) => lifecycle::apply(rules),
+                Change::Disable => lifecycle::disable(),
+                Change::Remove => lifecycle::remove(),
+            };
+        }
+        let mut args = vec!["network".into(), action.into()];
+        let input = rules.map(serde_json::to_vec).transpose()?;
+        if input.is_some() {
+            args.push("--stdin".into());
+        }
+        command::run_transaction(&executable()?, &args, input.as_deref(), true, cancel)?;
+        Ok(())
+    })();
+    match &result {
+        Ok(()) => tracing::info!(outcome = "completed", "PF change completed"),
+        Err(_) => tracing::error!(operation = action, outcome = "failed", "PF change failed"),
     }
-    let mut args = vec!["network".into(), action.into()];
-    let input = rules.map(serde_json::to_vec).transpose()?;
-    if input.is_some() {
-        args.push("--stdin".into());
-    }
-    command::run_transaction(&executable()?, &args, input.as_deref(), true, cancel)?;
-    Ok(())
+    result
 }
 
 /// Validate the proposed PF configuration against this host without mutation.
@@ -97,6 +107,7 @@ pub fn request_preflight(rules: &[NetworkRule], cancel: &AtomicBool) -> Result<(
         !cancel.load(Ordering::Relaxed),
         "network preflight cancelled"
     );
+    let _span = tracing::debug_span!("pf_preflight", rule_count = rules.len()).entered();
     validate_rules(rules)?;
     if command::is_root() {
         return preflight::preflight_apply(rules);

@@ -26,6 +26,8 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 flate2 = "1"
 tempfile = "3"
 time = { version = "0.3", default-features = false, features = ["std"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry", "fmt", "json"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
@@ -52,6 +54,9 @@ unicode-segmentation.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ipnet.workspace = true
+libc.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -105,38 +105,76 @@ pub(super) fn terminate(
     system: &mut impl ProcessSystem,
     request: &TerminationRequest,
 ) -> Result<TerminationReport> {
-    ensure!(
-        !request.targets.is_empty() && request.targets.len() <= MAX_TARGETS,
-        "select between 1 and {MAX_TARGETS} captured processes"
-    );
-    let protected = protected_pids(system)?;
-    let uid = system.uid();
-    ensure!(
-        uid != 0,
-        "process termination is unavailable while Rooklet runs as root"
-    );
-    let mut seen = HashSet::new();
-    for target in &request.targets {
-        ensure!(seen.insert(target.pid), "duplicate process target");
-        check_target(target, uid, &protected)?;
-        check_current(system, target)?;
-    }
-    // No signal has been delivered before the entire request passes preflight.
-    let mut report = TerminationReport {
-        attempted: request.targets.len(),
-        delivered: Vec::new(),
-        failures: Vec::new(),
+    let signal = match request.mode {
+        TerminationMode::Terminate => "terminate",
+        TerminationMode::ForceKill => "force_kill",
     };
-    for target in &request.targets {
-        let result =
-            check_current(system, target).and_then(|()| system.signal(target, request.mode));
-        match result {
-            Ok(()) => report.delivered.push(target.pid),
-            Err(error) => report.failures.push(SignalFailure {
-                pid: target.pid,
-                reason: error.to_string(),
-            }),
+    let _span = tracing::info_span!(
+        "process_termination",
+        signal,
+        target_count = request.targets.len()
+    )
+    .entered();
+    tracing::info!(
+        outcome = "accepted",
+        "confirmed process signal request accepted"
+    );
+    let result = (|| {
+        ensure!(
+            !request.targets.is_empty() && request.targets.len() <= MAX_TARGETS,
+            "select between 1 and {MAX_TARGETS} captured processes"
+        );
+        let protected = protected_pids(system)?;
+        let uid = system.uid();
+        ensure!(
+            uid != 0,
+            "process termination is unavailable while Rooklet runs as root"
+        );
+        let mut seen = HashSet::new();
+        for target in &request.targets {
+            ensure!(seen.insert(target.pid), "duplicate process target");
+            check_target(target, uid, &protected)?;
+            check_current(system, target)?;
         }
+        // No signal has been delivered before the entire request passes preflight.
+        let mut report = TerminationReport {
+            attempted: request.targets.len(),
+            delivered: Vec::new(),
+            failures: Vec::new(),
+        };
+        for target in &request.targets {
+            let result =
+                check_current(system, target).and_then(|()| system.signal(target, request.mode));
+            match result {
+                Ok(()) => report.delivered.push(target.pid),
+                Err(error) => report.failures.push(SignalFailure {
+                    pid: target.pid,
+                    reason: error.to_string(),
+                }),
+            }
+        }
+        Ok(report)
+    })();
+    match &result {
+        Ok(report) if report.failures.is_empty() => tracing::info!(
+            attempted_count = report.attempted,
+            delivered_count = report.delivered.len(),
+            outcome = "delivered",
+            "process signals delivered"
+        ),
+        Ok(report) => tracing::warn!(
+            signal,
+            attempted_count = report.attempted,
+            delivered_count = report.delivered.len(),
+            failed_count = report.failures.len(),
+            outcome = "partial",
+            "process signal request has failures"
+        ),
+        Err(_) => tracing::error!(
+            signal,
+            outcome = "failed",
+            "process signal request rejected or failed"
+        ),
     }
-    Ok(report)
+    result
 }

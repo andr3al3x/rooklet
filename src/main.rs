@@ -1,6 +1,7 @@
 mod auth;
 mod cli;
 mod json;
+mod logging;
 mod tui;
 
 fn main() {

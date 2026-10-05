@@ -13,9 +13,11 @@ pub(super) struct Live {
     activity_error: Option<String>,
     geoip: GeoIp,
     geoip_error: Option<String>,
+    geoip_available: bool,
     controls: Controls,
     resources: crate::resources::Sampler,
     interest: rooklet_core::resources::ResourceInterest,
+    controls_available: Option<[bool; 3]>,
 }
 impl Live {
     pub(super) fn new() -> Result<Self> {
@@ -37,14 +39,37 @@ impl Live {
             Ok(monitor) => (Some(monitor), None),
             Err(error) => (None, Some(format!("Activity unavailable: {error}"))),
         };
+        let geoip_available = geoip.description().is_some();
+        if !geoip_available {
+            tracing::warn!(
+                subsystem = "geoip",
+                available = false,
+                "country database unavailable at startup"
+            );
+        } else if geoip_error.is_some() {
+            tracing::warn!(
+                subsystem = "geoip_refresh",
+                available = false,
+                "country database refresh failed; retained previous data"
+            );
+        }
+        if activity_error.is_some() {
+            tracing::warn!(
+                subsystem = "activity",
+                available = false,
+                "activity monitor unavailable at startup"
+            );
+        }
         Ok(Self {
             monitor,
             activity_error,
             geoip,
             geoip_error,
+            geoip_available,
             controls: Controls::default(),
             resources: crate::resources::Sampler::default(),
             interest: rooklet_core::resources::ResourceInterest::default(),
+            controls_available: None,
         })
     }
     pub(super) fn reload_geoip(&mut self) -> Result<()> {
@@ -52,7 +77,22 @@ impl Live {
             self.geoip = GeoIp::managed()?;
         }
         self.geoip.refresh()?;
+        if self.geoip_error.is_some() {
+            tracing::info!(
+                subsystem = "geoip_refresh",
+                available = true,
+                "country database refresh recovered"
+            );
+        }
         self.geoip_error = None;
+        if !self.geoip_available && self.geoip.description().is_some() {
+            tracing::info!(
+                subsystem = "geoip",
+                available = true,
+                "country database became available"
+            );
+        }
+        self.geoip_available = self.geoip.description().is_some();
         Ok(())
     }
     pub(super) fn set_resource_interest(
@@ -66,16 +106,76 @@ impl Live {
         cancel: &AtomicBool,
         force_controls: bool,
     ) -> Result<Snapshot> {
+        let started = std::time::Instant::now();
         // A separate CLI update should become visible in an already-running TUI.
         if self.geoip.is_managed() {
+            let was_available = self.geoip_error.is_none();
             self.geoip_error = self
                 .geoip
                 .refresh()
                 .err()
                 .map(|error| format!("Country database refresh failed: {error:#}"));
+            let available = self.geoip_error.is_none();
+            if was_available != available {
+                if available {
+                    tracing::info!(
+                        subsystem = "geoip_refresh",
+                        available,
+                        "country database refresh recovered"
+                    );
+                } else {
+                    tracing::warn!(
+                        subsystem = "geoip_refresh",
+                        available,
+                        "country database refresh failed"
+                    );
+                }
+            }
         }
         let mut snapshot = self.controls.read(force_controls, || read_controls(cancel));
+        let available = [
+            snapshot.firewall.is_some(),
+            snapshot.applications_available,
+            snapshot.network.rules_available,
+        ];
+        for (index, subsystem) in ["incoming_settings", "incoming_applications", "pf_rules"]
+            .into_iter()
+            .enumerate()
+        {
+            if self
+                .controls_available
+                .is_none_or(|previous| previous[index] != available[index])
+            {
+                if available[index] {
+                    tracing::info!(subsystem, available = true, "firewall controls available");
+                } else {
+                    tracing::warn!(
+                        subsystem,
+                        available = false,
+                        "firewall controls unavailable"
+                    );
+                }
+            }
+        }
+        self.controls_available = Some(available);
         snapshot.geoip = self.geoip.description();
+        let geoip_available = snapshot.geoip.is_some();
+        if self.geoip_available != geoip_available {
+            if geoip_available {
+                tracing::info!(
+                    subsystem = "geoip",
+                    available = true,
+                    "country database became available"
+                );
+            } else {
+                tracing::warn!(
+                    subsystem = "geoip",
+                    available = false,
+                    "country database became unavailable"
+                );
+            }
+        }
+        self.geoip_available = geoip_available;
         if let Some(monitor) = &mut self.monitor {
             match monitor.poll(&mut self.geoip, cancel) {
                 Ok(activity) => {
@@ -104,6 +204,13 @@ impl Live {
         snapshot.notices.push("Traffic totals start at the first observation. Activity is best effort; hidden processes and wildcard UDP peers may be unavailable. Application firewall controls incoming connections.".into());
         snapshot.permission_paths = crate::permissions::capture_paths(&snapshot);
         ensure!(!cancel.load(Ordering::Relaxed), "snapshot cancelled");
+        tracing::trace!(
+            duration_ms = started.elapsed().as_millis() as u64,
+            application_count = snapshot.applications.len(),
+            activity_count = snapshot.activity.len(),
+            resource_group_count = snapshot.resources.groups.len(),
+            "local observation completed"
+        );
         Ok(snapshot)
     }
 }

@@ -34,6 +34,18 @@ pub(super) enum UpdateKind {
     Profile,
 }
 
+impl UpdateKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Observation => "observation",
+            Self::Firewall => "firewall",
+            Self::GeoIp => "geoip",
+            Self::Terminate => "termination",
+            Self::Profile => "profile",
+        }
+    }
+}
+
 enum Work {
     Firewall(Mutation),
     GeoIp,
@@ -115,13 +127,17 @@ impl Worker {
         let worker_interest = Arc::clone(&interest);
         let refresh = Arc::new(AtomicBool::new(false));
         let worker_refresh = Arc::clone(&refresh);
+        let parent = tracing::Span::current();
         let thread = thread::Builder::new()
             .name("rooklet-backend".into())
             .spawn(move || {
+                let _session = parent.enter();
+                tracing::debug!("backend worker started");
                 // Database validation and monitor startup must not block the first TUI frame.
                 let mut backend = match Backend::new() {
                     Ok(backend) => backend.with_cancellation(Arc::clone(&worker_cancel)),
                     Err(error) => {
+                        tracing::error!("backend worker initialization failed");
                         let _ = publish(
                             &responses,
                             Update {
@@ -135,21 +151,60 @@ impl Worker {
                         return;
                     }
                 };
+                let mut operation_id = 1_u64;
+                let mut observation_available = None;
                 observe(work, responses, &worker_cancel, |work| {
                     let kind = work.as_ref().map_or(UpdateKind::Observation, Work::kind);
+                    let operation = kind.label();
+                    let span = if work.is_some() {
+                        operation_id = operation_id.saturating_add(1);
+                        tracing::info_span!("worker_operation", operation, operation_id)
+                    } else {
+                        tracing::Span::none()
+                    };
+                    let _operation = span.enter();
+                    let started = Instant::now();
                     let report = work
                         .map(|work| work.run(&mut backend))
                         .transpose()
                         .map(Option::unwrap_or_default);
-                    observe_after_work(kind, report, || {
+                    let update = observe_after_work(kind, report, || {
                         let requested = worker_refresh.swap(false, Ordering::Relaxed);
                         let interest = worker_interest
                             .lock()
                             .map(|value| value.clone())
                             .unwrap_or_default();
                         backend.observe(&interest, requested || kind != UpdateKind::Observation)
-                    })
+                    });
+                    if kind != UpdateKind::Observation {
+                        tracing::info!(
+                            operation,
+                            operation_id,
+                            action_succeeded = update.operation_error.is_none(),
+                            readback_succeeded = update.result.is_ok(),
+                            duration_ms = started.elapsed().as_millis() as u64,
+                            "worker operation completed"
+                        );
+                        if update.operation_error.is_some() || update.result.is_err() {
+                            tracing::error!(
+                                operation,
+                                operation_id,
+                                "worker operation or readback failed"
+                            );
+                        }
+                    }
+                    let available = update.result.is_ok();
+                    if observation_available != Some(available) {
+                        if available {
+                            tracing::info!("backend observations available");
+                        } else {
+                            tracing::warn!("backend observations unavailable");
+                        }
+                        observation_available = Some(available);
+                    }
+                    update
                 });
+                tracing::debug!("backend worker stopped");
             })
             .context("cannot start backend worker")?;
         Ok(Self {
@@ -191,12 +246,14 @@ impl Worker {
 
     fn submit_work(&mut self, work: Work) -> Result<()> {
         ensure!(!self.in_flight, "an operation is already in progress");
+        let operation = work.kind().label();
         self.commands
             .as_ref()
             .context("backend worker stopped")?
             .send(work)
             .context("backend worker stopped")?;
         self.in_flight = true;
+        tracing::info!(operation, "worker operation queued");
         Ok(())
     }
 
@@ -242,7 +299,13 @@ impl Drop for Worker {
         // Unblock a pending response before joining, including on terminal errors.
         self.updates.take();
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            tracing::debug!(
+                operation_pending = self.in_flight,
+                "waiting for backend shutdown"
+            );
+            if thread.join().is_err() {
+                tracing::error!("backend worker panicked");
+            }
         }
     }
 }

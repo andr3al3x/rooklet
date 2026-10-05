@@ -20,7 +20,15 @@ impl Sampler {
         interest: &ResourceInterest,
         cancel: &AtomicBool,
     ) -> Resources {
-        self.engine.observe(interest, cancel)
+        let started = std::time::Instant::now();
+        let resources = self.engine.observe(interest, cancel);
+        tracing::trace!(
+            duration_us = started.elapsed().as_micros() as u64,
+            enabled = resources.enabled,
+            group_count = resources.groups.len(),
+            "native resource observation completed"
+        );
+        resources
     }
     pub(crate) fn identities(&self) -> Vec<ProcessIdentity> {
         self.engine.identities()

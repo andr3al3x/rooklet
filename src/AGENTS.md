@@ -9,6 +9,7 @@ same behavior requirements when updating those tests.
 
 - `main.rs`: minimal entry point; `cli/`: arguments, dispatch, and bounded input.
 - `auth.rs` and `json.rs`: terminal authentication and CLI output.
+- `logging.rs` and `logging/`: optional private diagnostics, filtering, and bounded file writing.
 - `tui.rs` and `tui/`: terminal lifecycle, events, and bounded backend workers.
 - `app.rs` and `app/`: state, selection, filtering, and typed dialogs/effects.
 - `ui.rs` and `ui/`: cached-state rendering, themes, viewports, and pointer geometry.
@@ -26,6 +27,9 @@ same behavior requirements when updating those tests.
   state on errors and shutdown; never collect passwords or let workers prompt.
 - Keep queues bounded and coalesce observation interest/refresh requests. Accepted
   operations take precedence over sampling; quitting waits for authorized PF transactions.
+- Keep diagnostics separate from terminal output. Use explicit static categories,
+  counts, durations, and outcomes; never log paths, endpoints, configuration, raw
+  arguments/output, process metadata, or error display. Follow [the event map](../docs/logging.md).
 - Keep selection stable as observations reorder or disappear. Freeze activity, resources,
   and captured evidence together while continuing to update current firewall controls.
 - Drive resource collection from actual visibility, inspection, and sorting interest.
