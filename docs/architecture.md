@@ -214,5 +214,4 @@ publication alone requests repository write access. See
 UI changes require inspection of actual Ratatui cells
 at multiple sizes. Tests do not mutate the host firewall; privileged mutation,
 connectivity, VPN coexistence, and reboot behavior still require isolated live
-integration testing. Hosted workflow execution has not been validated locally;
-older macOS compatibility still requires runtime testing.
+integration testing. Older macOS compatibility still requires runtime testing.

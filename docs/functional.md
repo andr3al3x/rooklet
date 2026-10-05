@@ -166,8 +166,8 @@ are no demo observations, legacy aliases, schema migrations, extensions, or
 notarization workflows.
 
 The project is an early release. Privileged mutation, connectivity enforcement,
-VPN coexistence, and reboot behavior need isolated integration testing. Hosted
-Intel workflow execution and older macOS runtime behavior remain unverified.
+VPN coexistence, and reboot behavior need isolated integration testing. Older
+macOS runtime behavior remains unverified.
 Diagnostic logs and observed traffic cannot replace those checks.
 
 PF is not a supported Apple product API, so macOS and other networking components
