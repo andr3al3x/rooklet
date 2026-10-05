@@ -48,6 +48,8 @@ compatibility layers, legacy CLI aliases, or old-schema migrations.
   trusted persistence, subprocess adapter, and lifecycle transactions.
 - `tests/`: behavior and regression checks; fixtures must retain their provenance and licenses.
 - `examples/preview.rs` and `scripts/render-preview.py`: actual terminal-cell visual previews.
+- `scripts/build-release.sh` and `scripts/package.sh`: explicit macOS target builds and verified archives.
+- `scripts/install.sh` and `scripts/uninstall.sh`: binary-only installation/removal; never change live rules or bypass quarantine.
 
 Keep facade files focused on composition and their public API. Put substantial
 parsing, rendering, persistence, and transaction logic in modules for those

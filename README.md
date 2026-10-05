@@ -38,6 +38,56 @@ Without installing, use `cargo run --locked -- --demo` or
 `cargo run --release --locked --`. Use at least **80 × 24** for comfortable
 navigation; the minimum is 50 × 17. No patched font is required.
 
+## Binary installation (no Rust required)
+
+Each archive includes a [short installation guide](docs/install.md), the binary,
+install/uninstall scripts, and the license.
+
+Use the archive for your Mac: `macos-arm64` for Apple silicon, or
+`macos-x86_64` for Intel. With the archive and its matching `.sha256` file in the
+same directory, verify and extract it. For version 0.2.0 on Apple silicon:
+
+```sh
+shasum -a 256 -c xield-0.2.0-macos-arm64.tar.gz.sha256
+tar -xzf xield-0.2.0-macos-arm64.tar.gz
+cd xield-0.2.0-macos-arm64
+sh install.sh
+export PATH="$HOME/.local/bin:$PATH"
+xield --version
+xield --demo
+```
+
+The bundled installer needs only macOS's standard tools; neither Rust nor Xcode
+command-line tools are needed. It copies the executable
+to `~/.local/bin/xield`, sets executable permissions, and atomically replaces an
+existing regular file for upgrades. It does not request sudo, run Xield, edit
+shell configuration, or change firewall settings or country data. Add the PATH
+line to your shell configuration if this directory is not already on PATH.
+
+Choose another writable destination with `sh install.sh --bin-dir /absolute/path/to/bin`.
+The installer rejects a binary for a different architecture and refuses to
+replace a destination symlink or directory. Run it again with a newer archive
+to upgrade. `sh install.sh --help` lists the options.
+
+Release archives have no Developer ID signature or notarization. macOS's linker
+may supply an ad-hoc signature. Downloaded binaries can be blocked by Gatekeeper;
+see [Apple's guidance for opening downloaded software](https://support.apple.com/en-us/102445).
+The installer preserves quarantine attributes. Source installation remains an
+option without a downloaded binary.
+
+To uninstall a binary installation, use the script from an extracted archive:
+
+```sh
+sh uninstall.sh
+# For a custom installation directory:
+sh uninstall.sh --bin-dir /absolute/path/to/bin
+```
+
+Uninstall removes only the `xield` executable. Applied firewall settings, PF
+rules, backups, and country data remain. If you want to remove Xield's PF setup,
+explicitly run `xield network remove` before uninstalling. For an installation
+made with `cargo install`, use `cargo uninstall xield` instead.
+
 ## Features and scope
 
 | View | What you can do | Backend and scope |
@@ -247,10 +297,33 @@ configuration drift, cancellation, confirmations, mouse geometry, and rendering.
 Tests do not change the host firewall; PF syntax checks use `pfctl -n`, and native
 signal tests target only processes they create. GitHub Actions runs checks on macOS.
 
-`make package` creates an unsigned archive for the current Mac architecture in
-`target/package/`, with the binary, README, license, and PF documentation.
-Downloaded unsigned binaries may encounter Gatekeeper. Installing from source
-is the supported path and requires no signing or notarization.
+`make release` builds the Rust toolchain's native macOS target explicitly and
+prints the executable path under `target/<target-triple>/release/xield`.
+`make install` builds and installs that binary into `~/.local/bin`;
+`make uninstall` removes it. Override the destination with
+`make install BIN_DIR="/absolute/path/to/bin"` and the same value for uninstall.
+These Make targets require Rust; the scripts in a binary archive do not.
+
+`make package` creates an architecture-verified `.tar.gz` and matching `.sha256`
+file in `target/package/`. The archive contains the executable, install/uninstall
+scripts, license, and a short installation guide as `README.md`. Screenshots and
+development documentation stay in the repository.
+It uses fresh staging and excludes macOS resource forks and extended metadata.
+Cargo's configured target directory or `CARGO_BUILD_TARGET` cannot cause a stale
+binary to be packaged. No signing account, provisioning, or notarization is used.
+
+An explicit supported target can be selected when its Rust standard library and
+macOS build tools are installed:
+
+```sh
+make package TARGET=aarch64-apple-darwin
+make package TARGET=x86_64-apple-darwin
+```
+
+The package version comes from Cargo metadata; packaging never needs to run a
+cross-built executable. Archives are separate builds for each architecture,
+rather than a universal binary. Cross-built Intel releases still need runtime
+testing on an Intel Mac.
 
 Contributions are welcome. Follow [AGENTS.md](AGENTS.md), run the checks above,
 and keep live firewall integration tests in an isolated environment. Bug reports
