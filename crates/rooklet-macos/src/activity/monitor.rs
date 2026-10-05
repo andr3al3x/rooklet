@@ -6,7 +6,7 @@ use rooklet_core::model::ProcessActivity;
 use std::{
     fs::File,
     io::Read,
-    process::{Child, ChildStderr, Command, Stdio},
+    process::{ChildStderr, Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -17,6 +17,8 @@ const MAX_READ: usize = 4 * 1024 * 1024;
 fn csv_terminal() -> Result<(File, File)> {
     use std::os::fd::{AsRawFd, FromRawFd};
     let (mut master, mut slave) = (-1, -1);
+    // SAFETY: both descriptor outputs are live writable integers. Null optional
+    // name/settings/size pointers request defaults as specified by openpty(3).
     let status = unsafe {
         libc::openpty(
             &mut master,
@@ -31,23 +33,36 @@ fn csv_terminal() -> Result<(File, File)> {
         "unable to create nettop CSV terminal: {}",
         std::io::Error::last_os_error()
     );
+    // SAFETY: successful openpty returns two distinct owned descriptors. Each
+    // transfers to one File, which closes it on every subsequent error path.
     let master = unsafe { File::from_raw_fd(master) };
+    // SAFETY: the slave descriptor is independently owned and transferred once.
     let slave = unsafe { File::from_raw_fd(slave) };
     for fd in [master.as_raw_fd(), slave.as_raw_fd()] {
+        // SAFETY: both Files remain alive; F_GETFD takes no variadic argument.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
         ensure!(
-            flags >= 0 && unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } >= 0,
+            flags >= 0,
+            "unable to read nettop terminal descriptor flags"
+        );
+        ensure!(
+            // SAFETY: F_SETFD receives a live descriptor and c_int descriptor flags.
+            unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } >= 0,
             "unable to configure nettop terminal descriptor"
         );
     }
     let mut settings = std::mem::MaybeUninit::<libc::termios>::uninit();
     ensure!(
+        // SAFETY: the slave is a live terminal; settings has aligned writable storage
+        // for the SDK termios layout and is read only after tcgetattr succeeds.
         unsafe { libc::tcgetattr(slave.as_raw_fd(), settings.as_mut_ptr()) } == 0,
         "unable to read nettop terminal settings"
     );
+    // SAFETY: successful tcgetattr initialized the integer-only termios fields.
     let mut settings = unsafe { settings.assume_init() };
     settings.c_oflag &= !libc::OPOST;
     ensure!(
+        // SAFETY: settings is an initialized termios borrowed for the synchronous call.
         unsafe { libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &settings) } == 0,
         "unable to configure nettop CSV terminal"
     );
@@ -60,7 +75,7 @@ fn csv_terminal() -> Result<(File, File)> {
 }
 
 pub(crate) struct Monitor {
-    child: Child,
+    child: command::ManagedChild,
     stdout: File,
     stderr: ChildStderr,
     buffer: Vec<u8>,
@@ -102,18 +117,22 @@ impl Monitor {
             .stdin(Stdio::null())
             .stdout(Stdio::from(slave))
             .stderr(Stdio::piped());
-        command::isolate(&mut command);
-        let mut child = command.spawn().context("unable to start nettop")?;
+        let mut child =
+            command::ManagedChild::spawn(&mut command).context("unable to start nettop")?;
         let setup = (|| {
-            let stderr = child.stderr.take().context("nettop stderr unavailable")?;
+            let stderr = child.take_stderr().context("nettop stderr unavailable")?;
             command::nonblocking(&stderr)?;
             Ok(stderr)
         })();
         let stderr = match setup {
             Ok(pipe) => pipe,
             Err(error) => {
-                command::stop(&mut child);
-                return Err(error);
+                return match child.finish() {
+                    Ok(_) => Err(error),
+                    Err(cleanup) => {
+                        Err(error.context(format!("nettop cleanup also failed: {cleanup}")))
+                    }
+                };
             }
         };
         Ok(Self {
@@ -157,7 +176,10 @@ impl Monitor {
             }
         })();
         if let Err(error) = result {
-            command::stop(&mut self.child);
+            let error = match self.child.finish() {
+                Ok(_) => error,
+                Err(cleanup) => error.context(format!("nettop cleanup also failed: {cleanup}")),
+            };
             self.failed = Some(error.to_string());
             return Err(error);
         }
@@ -237,7 +259,8 @@ impl Monitor {
                 Err(error) => return Err(error).context("nettop diagnostic read failed"),
             }
         }
-        if let Some(status) = self.child.try_wait()? {
+        if self.child.exited()? {
+            let status = self.child.finish()?;
             bail!(
                 "nettop exited ({status}): {}",
                 String::from_utf8_lossy(&self.errors).trim()
@@ -256,11 +279,6 @@ impl Monitor {
         Ok(())
     }
 }
-impl Drop for Monitor {
-    fn drop(&mut self) {
-        command::stop(&mut self.child);
-    }
-}
 
 #[cfg(all(test, unix))]
 mod terminal_tests {
@@ -275,6 +293,7 @@ mod terminal_tests {
         let (mut master, mut slave) = csv_terminal().unwrap();
         for fd in [master.as_raw_fd(), slave.as_raw_fd()] {
             assert_ne!(
+                // SAFETY: the terminal Files own these descriptors throughout this test.
                 unsafe { libc::fcntl(fd, libc::F_GETFD) } & libc::FD_CLOEXEC,
                 0
             );
@@ -362,7 +381,7 @@ mod terminal_tests {
                 .contains("cancelled")
         );
         assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(monitor.child.try_wait().unwrap().is_some());
+        assert!(monitor.child.exited().unwrap());
         thread.join().unwrap();
     }
     #[test]

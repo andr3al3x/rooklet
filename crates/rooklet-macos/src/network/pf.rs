@@ -12,6 +12,7 @@ pub(super) fn run(args: &[&str], input: Option<&[u8]>) -> Result<String> {
         Path::new(PFCTL),
         &args.iter().map(|s| (*s).into()).collect::<Vec<_>>(),
         input,
+        // SAFETY: geteuid takes no arguments and has no caller-side preconditions.
         unsafe { libc::geteuid() } != 0,
         &AtomicBool::new(false),
     )
@@ -29,6 +30,7 @@ pub(super) fn acquire_token() -> Result<String> {
 pub(super) fn root() -> Result<()> {
     ensure!(cfg!(target_os = "macos"), "PF management requires macOS");
     ensure!(
+        // SAFETY: geteuid takes no arguments and has no caller-side preconditions.
         unsafe { libc::geteuid() } == 0,
         "Network changes require root; run this command through sudo"
     );
@@ -80,6 +82,7 @@ pub(super) fn verify_interfaces(rules: &[NetworkRule]) -> Result<()> {
         if let Some(interface) = &rule.interface {
             let name = std::ffi::CString::new(interface.as_str())?;
             ensure!(
+                // SAFETY: name is NUL-terminated and remains live for this read-only call.
                 unsafe { libc::if_nametoindex(name.as_ptr()) } != 0,
                 "Interface {interface} does not exist"
             );

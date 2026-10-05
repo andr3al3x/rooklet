@@ -1,46 +1,22 @@
 //! Supervision for helpers whose bounded operations may require rollback.
 #[cfg(unix)]
 mod unix {
-    use super::super::{LIMIT, nonblocking};
+    use super::super::{LIMIT, isolate, nonblocking};
     use anyhow::{Context, Result, bail, ensure};
     use std::{
-        fs::File,
-        io::{Read, Write},
-        os::fd::{AsRawFd, FromRawFd},
+        io::{PipeReader, Read, Write, pipe},
         process::{Command, Stdio},
         time::Duration,
     };
 
-    /// Configure every descriptor before spawn: setup failures cannot strand a helper.
-    fn pipe() -> Result<(File, File)> {
-        let mut descriptors = [-1; 2];
-        ensure!(
-            unsafe { libc::pipe(descriptors.as_mut_ptr()) } == 0,
-            "unable to create transaction pipe: {}",
-            std::io::Error::last_os_error()
-        );
-        let read = unsafe { File::from_raw_fd(descriptors[0]) };
-        let write = unsafe { File::from_raw_fd(descriptors[1]) };
-        for file in [&read, &write] {
-            let fd = file.as_raw_fd();
-            let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-            ensure!(
-                flags >= 0
-                    && unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } >= 0,
-                "unable to configure transaction descriptor"
-            );
-        }
-        Ok((read, write))
-    }
-
     struct Capture {
-        pipe: Option<File>,
+        pipe: Option<PipeReader>,
         bytes: Vec<u8>,
         overflow: bool,
         error: Option<std::io::Error>,
     }
     impl Capture {
-        fn new(pipe: File) -> Self {
+        fn new(pipe: PipeReader) -> Self {
             Self {
                 pipe: Some(pipe),
                 bytes: Vec::new(),
@@ -80,6 +56,7 @@ mod unix {
     }
 
     pub(super) fn run(mut command: Command, input: Option<&[u8]>) -> Result<String> {
+        // Complete all descriptor setup before launching an authorized helper.
         let (out_read, out_write) = pipe()?;
         let (err_read, err_write) = pipe()?;
         nonblocking(&out_read)?;
@@ -95,6 +72,7 @@ mod unix {
         } else {
             None
         };
+        isolate(&mut command);
         let mut child = command
             .spawn()
             .context("unable to start transaction helper")?;

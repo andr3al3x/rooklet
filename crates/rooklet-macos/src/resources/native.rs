@@ -32,6 +32,9 @@ fn timebase() -> f64 {
         fn native_timebase_info(info: *mut Timebase) -> libc::c_int;
     }
     let mut info = Timebase { numer: 0, denom: 0 };
+    // SAFETY: Timebase matches mach_timebase_info_data_t's two-u32 C layout
+    // and libc::c_int matches kern_return_t. The initialized, aligned output
+    // stays writable and alive for the synchronous call; no pointer is retained.
     let result = unsafe { native_timebase_info(&mut info) };
     if result == 0 && info.numer > 0 && info.denom > 0 {
         f64::from(info.numer) / f64::from(info.denom)
@@ -49,10 +52,14 @@ impl ResourceSystem for Native {
     fn capture(&mut self, pid: u32) -> Result<ProcessIdentity> {
         let identity = process::capture(pid)?;
         #[cfg(target_os = "macos")]
-        anyhow::ensure!(
-            identity.uid != 0 && identity.uid == unsafe { libc::geteuid() },
-            "process is not owned by the current non-root user"
-        );
+        {
+            // SAFETY: geteuid takes no pointers and has no caller preconditions.
+            let uid = unsafe { libc::geteuid() };
+            anyhow::ensure!(
+                identity.uid != 0 && identity.uid == uid,
+                "process is not owned by the current non-root user"
+            );
+        }
         Ok(identity)
     }
     fn matches(&mut self, identity: &ProcessIdentity) -> Result<bool> {
@@ -68,8 +75,10 @@ impl ResourceSystem for Native {
         );
         let pid = i32::try_from(pid).context("invalid process PID")?;
         let mut info = MaybeUninit::<libc::rusage_info_v2>::zeroed();
-        // libproc accepts a pointer to the fixed rusage buffer, cast to its
-        // historical rusage_info_t pointer signature. A failure never exposes it.
+        // SAFETY: RUSAGE_INFO_V2 writes the SDK-matching rusage_info_v2 into this
+        // aligned, writable buffer, alive for the synchronous call. Despite its
+        // historical void** signature, libproc passes the buffer address directly
+        // to the kernel; it neither dereferences it as a pointer nor retains it.
         let result =
             unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2, info.as_mut_ptr().cast()) };
         ensure!(
@@ -77,6 +86,8 @@ impl ResourceSystem for Native {
             "resource reading unavailable ({})",
             std::io::Error::last_os_error()
         );
+        // SAFETY: the successful matching flavor populated this fixed-size
+        // buffer; every field is an integer or integer array and accepts all bits.
         let info = unsafe { info.assume_init() };
         // XNU fill_task_rusage copies task_power_info total_user/total_system.
         // task_power_info_locked uses Mach absolute ticks (rm_time_mach), not

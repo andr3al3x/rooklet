@@ -1,13 +1,16 @@
 //! Bounded, cancellable subprocess execution. Workers never prompt for credentials.
+mod child;
 mod transaction;
+
+pub(crate) use child::ManagedChild;
 
 use anyhow::{Context, Result, bail, ensure};
 #[cfg(unix)]
-use std::os::{fd::AsRawFd, unix::process::CommandExt};
+use std::os::{fd::AsFd, unix::process::CommandExt};
 use std::{
     io::{Read, Write},
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -98,7 +101,6 @@ fn prepare(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    isolate(&mut command);
     Ok(command)
 }
 
@@ -111,15 +113,14 @@ fn execute(
     combined: bool,
     timeout: Duration,
 ) -> Result<String> {
-    let mut child = prepare(path, args, input, privileged, cancel)?
-        .spawn()
+    let mut child = ManagedChild::spawn(&mut prepare(path, args, input, privileged, cancel)?)
         .with_context(|| format!("unable to start {}", path.display()))?;
     let result = (|| {
-        let mut stdout = child.stdout.take().context("command stdout unavailable")?;
-        let mut stderr = child.stderr.take().context("command stderr unavailable")?;
+        let mut stdout = child.take_stdout().context("command stdout unavailable")?;
+        let mut stderr = child.take_stderr().context("command stderr unavailable")?;
         nonblocking(&stdout)?;
         nonblocking(&stderr)?;
-        let mut stdin = child.stdin.take();
+        let mut stdin = child.take_stdin();
         if let Some(pipe) = &stdin {
             nonblocking(pipe)?;
         }
@@ -146,10 +147,8 @@ fn execute(
             }
             let done_out = drain(&mut stdout, &mut out)?;
             let done_err = drain(&mut stderr, &mut err)?;
-            if let Some(status) = child.try_wait().context("command wait failed")?
-                && done_out
-                && done_err
-            {
+            if child.exited().context("command wait failed")? && done_out && done_err {
+                let status = child.finish().context("command cleanup failed")?;
                 if !status.success() {
                     let detail = String::from_utf8_lossy(&err);
                     bail!("{} failed ({}): {}", path.display(), status, detail.trim());
@@ -166,15 +165,19 @@ fn execute(
             std::thread::sleep(Duration::from_millis(15));
         }
     })();
-    if result.is_err() {
-        stop(&mut child);
+    match result {
+        Ok(output) => Ok(output),
+        Err(error) => match child.finish() {
+            Ok(_) => Err(error),
+            Err(cleanup) => Err(error.context(format!("command cleanup also failed: {cleanup}"))),
+        },
     }
-    result
 }
 
 pub(crate) fn is_root() -> bool {
     #[cfg(unix)]
     {
+        // SAFETY: geteuid takes no pointers and has no caller preconditions.
         unsafe { libc::geteuid() == 0 }
     }
     #[cfg(not(unix))]
@@ -183,11 +186,17 @@ pub(crate) fn is_root() -> bool {
     }
 }
 #[cfg(unix)]
-pub(crate) fn nonblocking(pipe: &impl AsRawFd) -> Result<()> {
-    let fd = pipe.as_raw_fd();
+pub(crate) fn nonblocking(pipe: &impl AsFd) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let descriptor = pipe.as_fd();
+    let fd = descriptor.as_raw_fd();
+    // SAFETY: the borrowed descriptor remains open for both calls. F_GETFL has
+    // no variadic argument; F_SETFL receives the required c_int flags.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    ensure!(flags >= 0, "unable to read command pipe flags");
     ensure!(
-        flags >= 0 && unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
+        // SAFETY: the same live descriptor and the flags type required by F_SETFL.
+        unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
         "unable to configure command pipe"
     );
     Ok(())
@@ -199,22 +208,9 @@ pub(crate) fn nonblocking<T>(_: &T) -> Result<()> {
 
 pub(crate) fn isolate(command: &mut Command) {
     #[cfg(unix)]
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setpgid(0, 0) == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
+    {
+        command.process_group(0);
     }
-}
-pub(crate) fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 fn drain(pipe: &mut impl Read, output: &mut Vec<u8>) -> Result<bool> {
     let mut buffer = [0; 8192];

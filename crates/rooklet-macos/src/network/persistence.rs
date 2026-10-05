@@ -160,6 +160,8 @@ pub(super) fn mutation_lock() -> Result<fs::File> {
         .open(&path)?;
     trusted(&path, false)?;
     ensure!(
+        // SAFETY: lock owns a live fd and the flags are valid for flock. Ownership
+        // stays with File, whose eventual close releases the acquired lock.
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
         "Another Rooklet network change is in progress; retry after it completes"
     );

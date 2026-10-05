@@ -59,6 +59,8 @@ fn open_directory(path: &Path, create: bool) -> Result<Option<File>> {
             continue;
         };
         let name = CString::new(name.as_bytes())?;
+        // SAFETY: directory owns a live fd and name is a live NUL-terminated string.
+        // O_CREAT is absent, so openat requires no variadic mode argument.
         let mut fd = unsafe {
             libc::openat(
                 directory.as_raw_fd(),
@@ -72,12 +74,14 @@ fn open_directory(path: &Path, create: bool) -> Result<Option<File>> {
                 if !create {
                     return Ok(None);
                 }
+                // SAFETY: the directory fd and CString remain live; the mode is mode_t.
                 let result = unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o700) };
                 if result < 0
                     && std::io::Error::last_os_error().kind() != std::io::ErrorKind::AlreadyExists
                 {
                     return Err(std::io::Error::last_os_error().into());
                 }
+                // SAFETY: the directory fd and CString remain live; no O_CREAT mode is needed.
                 fd = unsafe {
                     libc::openat(
                         directory.as_raw_fd(),
@@ -92,10 +96,12 @@ fn open_directory(path: &Path, create: bool) -> Result<Option<File>> {
             "cannot open profile directory safely: {}",
             std::io::Error::last_os_error()
         );
+        // SAFETY: successful openat returned a new owned fd, transferred exactly once to File.
         directory = unsafe { File::from_raw_fd(fd) };
     }
     let metadata = directory.metadata()?;
     ensure!(
+        // SAFETY: geteuid takes no arguments and has no caller-side preconditions.
         metadata.uid() == unsafe { libc::geteuid() },
         "profile directory must be owned by the current user"
     );
@@ -107,6 +113,8 @@ fn open_directory(path: &Path, create: bool) -> Result<Option<File>> {
 }
 fn open_profile(directory: &File, name: &OsStr) -> Result<File> {
     let name = CString::new(name.as_bytes())?;
+    // SAFETY: directory owns a live fd and name stays NUL-terminated and live for the call.
+    // O_CREAT is absent, so no variadic mode argument is required.
     let fd = unsafe {
         libc::openat(
             directory.as_raw_fd(),
@@ -119,6 +127,7 @@ fn open_profile(directory: &File, name: &OsStr) -> Result<File> {
         "cannot open saved profile safely: {}",
         std::io::Error::last_os_error()
     );
+    // SAFETY: successful openat returned a new owned fd, transferred exactly once to File.
     let file = unsafe { File::from_raw_fd(fd) };
     ensure!(
         file.metadata()?.is_file(),
@@ -127,11 +136,15 @@ fn open_profile(directory: &File, name: &OsStr) -> Result<File> {
     Ok(file)
 }
 fn names(directory: &File) -> Result<Vec<String>> {
-    // fdopendir consumes its fd; retain our trusted descriptor for later openat calls.
+    // SAFETY: directory owns a live fd. dup creates a separately owned descriptor so
+    // fdopendir can consume it while the original remains available for openat.
     let fd = unsafe { libc::dup(directory.as_raw_fd()) };
     ensure!(fd >= 0, "cannot enumerate profile directory");
+    // SAFETY: fd is an owned, open directory descriptor. On success fdopendir takes
+    // ownership (and sets close-on-exec on macOS); only closedir may close it thereafter.
     let pointer = unsafe { libc::fdopendir(fd) };
     if pointer.is_null() {
+        // SAFETY: failed fdopendir leaves ownership of the valid duplicated fd here.
         unsafe {
             libc::close(fd);
         }
@@ -140,6 +153,8 @@ fn names(directory: &File) -> Result<Vec<String>> {
     struct Directory(*mut libc::DIR);
     impl Drop for Directory {
         fn drop(&mut self) {
+            // SAFETY: Directory owns the non-null fdopendir result exclusively and
+            // closes it exactly once, after all borrowed entries have expired.
             unsafe {
                 libc::closedir(self.0);
             }
@@ -149,10 +164,13 @@ fn names(directory: &File) -> Result<Vec<String>> {
     let mut names = Vec::new();
     let mut count = 0;
     loop {
+        // SAFETY: the exclusively used stream remains open until Directory is dropped.
         let entry = unsafe { libc::readdir(directory_stream.0) };
         if entry.is_null() {
             break;
         }
+        // SAFETY: non-null readdir results contain a NUL-terminated d_name, valid until
+        // the next call on this stream. All uses and the owned name copy precede that call.
         let bytes = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
         if bytes == b"." || bytes == b".." {
             continue;
@@ -202,6 +220,8 @@ fn load_at(path: &Path, name: &str) -> Result<Profile> {
 }
 fn save_lock(directory: &File) -> Result<File> {
     let name = CString::new(".save.lock")?;
+    // SAFETY: the directory fd and NUL-terminated name are live; 0o600 defaults to
+    // c_int, the C integer-promoted variadic mode_t required with O_CREAT on macOS.
     let fd = unsafe {
         libc::openat(
             directory.as_raw_fd(),
@@ -215,14 +235,18 @@ fn save_lock(directory: &File) -> Result<File> {
         "cannot open profile save lock safely: {}",
         std::io::Error::last_os_error()
     );
+    // SAFETY: successful openat returned a new owned fd, transferred exactly once to File.
     let lock = unsafe { File::from_raw_fd(fd) };
     let metadata = lock.metadata()?;
     ensure!(
         metadata.is_file()
+            // SAFETY: geteuid takes no arguments and has no caller-side preconditions.
             && metadata.uid() == unsafe { libc::geteuid() }
             && metadata.mode() & 0o077 == 0,
         "profile save lock must be a private regular file owned by the current user"
     );
+    // SAFETY: lock owns a live fd; these are valid flock flags. File retains ownership
+    // and releases the acquired lock when its descriptor is closed.
     let result = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     ensure!(
         result == 0,
@@ -247,6 +271,8 @@ fn save_at(path: &Path, name: &str, profile: &Profile) -> Result<()> {
     let mut temporary = None;
     for sequence in 0..128 {
         let candidate = CString::new(format!(".profile-{}-{sequence}.tmp", std::process::id()))?;
+        // SAFETY: the directory fd and NUL-terminated candidate are live; 0o600 defaults
+        // to c_int, the C integer-promoted variadic mode_t required by O_CREAT on macOS.
         let fd = unsafe {
             libc::openat(
                 directory.as_raw_fd(),
@@ -256,6 +282,7 @@ fn save_at(path: &Path, name: &str, profile: &Profile) -> Result<()> {
             )
         };
         if fd >= 0 {
+            // SAFETY: successful openat returned a new owned fd, transferred once to File.
             temporary = Some((candidate, unsafe { File::from_raw_fd(fd) }));
             break;
         }
@@ -271,6 +298,8 @@ fn save_at(path: &Path, name: &str, profile: &Profile) -> Result<()> {
         file.write_all(b"\n")?;
         file.sync_all()?;
         // linkat publishes the complete file atomically and refuses any existing name.
+        // SAFETY: directory owns the live fd and both CString paths remain live and
+        // NUL-terminated; zero is a valid linkat flags value.
         let linked = unsafe {
             libc::linkat(
                 directory.as_raw_fd(),
@@ -288,6 +317,8 @@ fn save_at(path: &Path, name: &str, profile: &Profile) -> Result<()> {
         directory.sync_all()?;
         Ok(())
     })();
+    // SAFETY: directory owns the live fd and temporary_name remains NUL-terminated and
+    // live; zero requests file unlinking and does not transfer descriptor ownership.
     let removed = unsafe { libc::unlinkat(directory.as_raw_fd(), temporary_name.as_ptr(), 0) };
     result?;
     ensure!(
