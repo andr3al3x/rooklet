@@ -11,11 +11,11 @@ use crate::{auth::authenticate, json::print_json};
 use anyhow::{Result, ensure};
 use args::{AppsCommand, Cli, CliCommand, FirewallCommand, Switch};
 use clap::Parser;
-use rooklet::{
-    backend::Backend,
-    clean, clean_multiline,
+use rooklet_core::{
     model::{Action, Mutation},
+    text::{clean, clean_multiline},
 };
+use rooklet_macos::backend::Backend;
 use std::io::{self, IsTerminal};
 
 pub(crate) fn run() -> Result<()> {

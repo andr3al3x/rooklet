@@ -2,71 +2,22 @@
 use super::{args::NetworkCommand, config::input_rules};
 use crate::{auth::authenticate, json::print_json};
 use anyhow::{Context, Result, ensure};
-use rooklet::{
+use rooklet_core::{
     model::{NetworkRule, NetworkStatus},
     network,
 };
-use std::{sync::atomic::AtomicBool, time::Duration};
+use rooklet_macos::network::{Change, request_change, request_preflight, request_status};
+use std::sync::atomic::AtomicBool;
 
 pub(super) fn network_status() -> Result<NetworkStatus> {
-    if rooklet::command::is_root() {
-        return Ok(network::status());
-    }
-    let result = rooklet::command::run(
-        &std::env::current_exe()?,
-        &["network".into(), "status".into()],
-        None,
-        true,
-        &AtomicBool::new(false),
-    );
-    match result {
-        Ok(text) => Ok(serde_json::from_str(&text)?),
-        Err(_) => Ok(NetworkStatus {
-            message: Some(
-                "PF status requires administrator access; run sudo -v or sudo rooklet network status"
-                    .into(),
-            ),
-            ..Default::default()
-        }),
-    }
-}
-enum NetworkChange<'a> {
-    Setup(&'a [NetworkRule]),
-    Apply(&'a [NetworkRule]),
-    Disable,
-    Remove,
+    request_status(&AtomicBool::new(false))
 }
 
-fn network_change(change: NetworkChange<'_>) -> Result<()> {
-    if rooklet::command::is_root() {
-        return match change {
-            NetworkChange::Setup(rules) => network::setup(rules),
-            NetworkChange::Apply(rules) => network::apply(rules),
-            NetworkChange::Disable => network::disable(),
-            NetworkChange::Remove => network::remove(),
-        };
-    }
-    let (action, rules) = match change {
-        NetworkChange::Setup(rules) => ("setup", Some(rules)),
-        NetworkChange::Apply(rules) => ("apply", Some(rules)),
-        NetworkChange::Disable => ("disable", None),
-        NetworkChange::Remove => ("remove", None),
-    };
+fn network_change(change: Change<'_>) -> Result<()> {
     authenticate()?;
-    let mut args = vec!["network".into(), action.into()];
-    let input = rules.map(serde_json::to_vec).transpose()?;
-    if input.is_some() {
-        args.push("--stdin".into());
-    }
-    rooklet::command::run_transaction(
-        &std::env::current_exe()?,
-        &args,
-        input.as_deref(),
-        true,
-        &AtomicBool::new(false),
-    )?;
-    Ok(())
+    request_change(change, &AtomicBool::new(false))
 }
+
 pub(super) fn run(command: NetworkCommand) -> Result<()> {
     let setup = matches!(&command, NetworkCommand::Setup(_));
     match command {
@@ -93,19 +44,8 @@ pub(super) fn run(command: NetworkCommand) -> Result<()> {
         }
         NetworkCommand::Preflight(input) => {
             let rules = input_rules(&input, false)?;
-            if rooklet::command::is_root() {
-                network::preflight_apply(&rules)?;
-            } else {
-                authenticate()?;
-                rooklet::command::run_with_timeout(
-                    &std::env::current_exe()?,
-                    &["network".into(), "preflight".into(), "--stdin".into()],
-                    Some(&serde_json::to_vec(&rules)?),
-                    true,
-                    &AtomicBool::new(false),
-                    Duration::from_secs(90),
-                )?;
-            }
+            authenticate()?;
+            request_preflight(&rules, &AtomicBool::new(false))?;
             println!("PF preflight passed; firewall state is unchanged.");
             return Ok(());
         }
@@ -117,17 +57,17 @@ pub(super) fn run(command: NetworkCommand) -> Result<()> {
             let rules = input_rules(&input, setup)?;
             super::network_analysis::warn(&rules)?;
             network_change(if setup {
-                NetworkChange::Setup(&rules)
+                Change::Setup(&rules)
             } else {
-                NetworkChange::Apply(&rules)
+                Change::Apply(&rules)
             })?;
         }
         NetworkCommand::Disable | NetworkCommand::Remove => {
             let remove = matches!(command, NetworkCommand::Remove);
             network_change(if remove {
-                NetworkChange::Remove
+                Change::Remove
             } else {
-                NetworkChange::Disable
+                Change::Disable
             })?;
         }
         command => {
@@ -199,7 +139,7 @@ pub(super) fn run(command: NetworkCommand) -> Result<()> {
             }
             network::validate_rules(&rules)?;
             super::network_analysis::warn(&rules)?;
-            network_change(NetworkChange::Apply(&rules))?;
+            network_change(Change::Apply(&rules))?;
         }
     }
     print_json(&network_status()?)

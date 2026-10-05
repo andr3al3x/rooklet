@@ -1,15 +1,15 @@
 //! Bounded backend work and observations, with transaction-aware shutdown.
 use anyhow::{Context, Result, ensure};
-use rooklet::{
-    app::{ProfileOperation, ProfileOutcome},
-    backend::Backend,
+use rooklet::app::{ProfileOperation, ProfileOutcome};
+use rooklet_core::{
     model::{Mutation, Snapshot},
     process::{TerminationReport, TerminationRequest},
-    profile,
+    resources::ResourceInterest,
 };
+use rooklet_macos::{backend::Backend, profile};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, SyncSender},
     },
@@ -81,7 +81,7 @@ fn profile_work(backend: &mut Backend, operation: ProfileOperation) -> Result<Pr
             })
         }
         ProfileOperation::Export(name) => {
-            let profile = profile::export(&backend.snapshot()?)?;
+            let profile = rooklet_core::profile::export(&backend.snapshot()?)?;
             let mut entries = profile::list()?;
             profile::save(&name, &profile)?;
             entries.push(name.clone());
@@ -101,6 +101,8 @@ pub(super) struct Worker {
     cancel: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     in_flight: bool,
+    interest: Arc<Mutex<ResourceInterest>>,
+    refresh: Arc<AtomicBool>,
 }
 
 impl Worker {
@@ -109,6 +111,10 @@ impl Worker {
         let worker_cancel = Arc::clone(&cancel);
         let (commands, work) = mpsc::sync_channel(1);
         let (responses, updates) = mpsc::sync_channel(1);
+        let interest = Arc::new(Mutex::new(ResourceInterest::default()));
+        let worker_interest = Arc::clone(&interest);
+        let refresh = Arc::new(AtomicBool::new(false));
+        let worker_refresh = Arc::clone(&refresh);
         let thread = thread::Builder::new()
             .name("rooklet-backend".into())
             .spawn(move || {
@@ -135,7 +141,14 @@ impl Worker {
                         .map(|work| work.run(&mut backend))
                         .transpose()
                         .map(Option::unwrap_or_default);
-                    observe_after_work(kind, report, || backend.snapshot())
+                    observe_after_work(kind, report, || {
+                        let requested = worker_refresh.swap(false, Ordering::Relaxed);
+                        let interest = worker_interest
+                            .lock()
+                            .map(|value| value.clone())
+                            .unwrap_or_default();
+                        backend.observe(&interest, requested || kind != UpdateKind::Observation)
+                    })
                 });
             })
             .context("cannot start backend worker")?;
@@ -145,6 +158,8 @@ impl Worker {
             cancel,
             thread: Some(thread),
             in_flight: false,
+            interest,
+            refresh,
         })
     }
 
@@ -162,6 +177,16 @@ impl Worker {
 
     pub fn profile(&mut self, operation: ProfileOperation) -> Result<()> {
         self.submit_work(Work::Profile(operation))
+    }
+
+    /// Interest replaces the previous value; UI changes never queue sampling jobs.
+    pub fn set_resource_interest(&self, interest: ResourceInterest) {
+        if let Ok(mut current) = self.interest.lock() {
+            *current = interest;
+        }
+    }
+    pub fn refresh(&self) {
+        self.refresh.store(true, Ordering::Relaxed);
     }
 
     fn submit_work(&mut self, work: Work) -> Result<()> {

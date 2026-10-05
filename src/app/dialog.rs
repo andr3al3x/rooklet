@@ -1,17 +1,20 @@
 //! Typed dialogs and editable network-rule drafts.
-use crate::model::{Action, Direction, Mutation, NetworkRule, Protocol};
+use rooklet_core::model::{Action, Direction, Mutation, NetworkRule, Protocol};
 
 #[derive(Debug, Clone)]
 pub enum ConfirmedAction {
     Firewall(Mutation),
-    Terminate(crate::process::TerminationRequest),
-    Profile(Box<crate::profile::Prepared>),
+    Terminate(rooklet_core::process::TerminationRequest),
+    Profile(Box<rooklet_macos::profile::Prepared>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Popup {
     Help,
-    Inspect(String),
+    Inspect {
+        key: String,
+        scroll: std::cell::Cell<u16>,
+    },
     Profiles {
         entries: Vec<String>,
         selected: usize,
@@ -52,7 +55,7 @@ pub struct NetworkDraft {
     pub interface: String,
 }
 impl NetworkDraft {
-    pub(super) fn from_peer(flow: &crate::model::Connection) -> Self {
+    pub(super) fn from_peer(flow: &rooklet_core::model::Connection) -> Self {
         let mut draft = Self::new(flow.remote_ip.clone());
         draft.name = format!("Peer {}", flow.remote_ip);
         draft.protocol = flow.protocol;
@@ -121,7 +124,7 @@ impl NetworkDraft {
             },
             enabled: self.enabled,
         };
-        crate::network::validate_rules(std::slice::from_ref(&rule))?;
+        rooklet_core::network::validate_rules(std::slice::from_ref(&rule))?;
         Ok(rule)
     }
     pub(super) fn text_mut(&mut self, field: usize) -> Option<&mut String> {

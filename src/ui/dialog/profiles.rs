@@ -1,7 +1,8 @@
 //! Profile list viewport and pointer geometry share the same row offset.
 use super::super::{HitMap, theme::Palette};
-use crate::{app::MouseAction, presentation::clean};
+use crate::app::MouseAction;
 use ratatui::{Frame, layout::Rect, style::Style, text::Line, widgets::Paragraph};
+use rooklet_core::text::clean;
 
 pub(super) fn list(
     frame: &mut Frame,

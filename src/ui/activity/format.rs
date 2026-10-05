@@ -1,9 +1,8 @@
 //! Compact, sanitized labels sized by terminal cells rather than UTF-8 bytes.
-use crate::{
-    model::ProcessActivity,
-    presentation::{clean, countries},
-};
+use crate::presentation::countries;
 use ratatui::text::Line;
+use rooklet_core::model::ProcessActivity;
+use rooklet_core::text::clean;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn bytes(value: u64) -> String {

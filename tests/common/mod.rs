@@ -1,5 +1,5 @@
 //! Static model fixtures for interaction tests; never invoke system adapters.
-use rooklet::model::{
+use rooklet_core::model::{
     Action, Application, Connection, Country, Direction, FirewallSettings, NetworkRule,
     NetworkStatus, ProcessActivity, Protocol, Snapshot,
 };
@@ -61,7 +61,7 @@ pub fn snapshot() -> Snapshot {
             pid,
             name: name.into(),
             path: Some(path.into()),
-            identities: vec![rooklet::process::ProcessIdentity {
+            identities: vec![rooklet_core::process::ProcessIdentity {
                 pid,
                 uid: 1000,
                 parent_pid: 1,
@@ -128,6 +128,8 @@ pub fn snapshot() -> Snapshot {
         firewall: Some(firewall),
         applications,
         activity,
+        resources: Default::default(),
+        control_age_ms: Some(0),
         network,
         geoip: Some("DB-IP Lite · fixture country data · CC BY 4.0".into()),
         notices,

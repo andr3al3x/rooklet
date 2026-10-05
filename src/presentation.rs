@@ -1,19 +1,6 @@
 //! Safe text and human-readable traffic formatting shared by views.
-use crate::model::ProcessActivity;
+use rooklet_core::model::ProcessActivity;
 
-pub fn clean(text: &str) -> String {
-    text.chars().filter(|c| safe_character(*c)).collect()
-}
-/// Human diagnostics may contain deliberate line breaks, but no terminal controls.
-pub fn clean_multiline(text: &str) -> String {
-    text.chars()
-        .filter(|c| *c == '\n' || safe_character(*c))
-        .collect()
-}
-fn safe_character(c: char) -> bool {
-    !c.is_control()
-        && !matches!(c, '\u{061c}' | '\u{200e}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{206f}')
-}
 pub fn bytes(value: u64) -> String {
     let units = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut number = value as f64;

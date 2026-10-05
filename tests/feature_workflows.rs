@@ -4,9 +4,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use rooklet::{
     app::{ActivitySort, App, MouseAction, Popup, View},
-    model::{Action, Direction, Mutation, NetworkRule, Protocol},
     ui::{self, HitMap, Theme},
 };
+use rooklet_core::model::{Action, Direction, Mutation, NetworkRule, Protocol};
 
 fn fixture_app() -> App {
     App::new(common::snapshot())

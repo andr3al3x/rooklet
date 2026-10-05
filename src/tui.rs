@@ -7,9 +7,9 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use rooklet::{
     app::{App, ProfileOperation},
-    model::Snapshot,
     ui::{self, Theme},
 };
+use rooklet_core::model::Snapshot;
 use std::time::Duration;
 use terminal::TerminalSession;
 use worker::{Update, UpdateKind, Worker};
@@ -35,9 +35,12 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
                 break;
             }
             if dirty {
+                let mut interest = Default::default();
                 terminal.draw(|frame| {
-                    hit_map = Some(ui::draw_interactive(frame, &app, theme, &mut ui_state))
+                    hit_map = Some(ui::draw_interactive(frame, &app, theme, &mut ui_state));
+                    interest = ui_state.resource_interest(&app, frame.area());
                 })?;
+                worker.set_resource_interest(interest);
                 dirty = false;
             }
             if event::poll(Duration::from_millis(100))? {
@@ -67,7 +70,10 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
                     }
                     if effect.authenticate {
                         match authenticate_in_terminal(&mut terminal)? {
-                            Ok(()) => app.notify("Administrator session authorized".into(), false),
+                            Ok(()) => {
+                                worker.refresh();
+                                app.notify("Administrator session authorized".into(), false);
+                            }
                             Err(error) => app.notify(error.to_string(), true),
                         }
                     }

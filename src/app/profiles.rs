@@ -1,7 +1,8 @@
 //! Managed profile selection, export, and reviewed application.
 use super::{App, ConfirmedAction, Effect, Popup, clean};
-use crate::{model::Snapshot, profile::Prepared};
 use crossterm::event::{KeyCode, KeyEvent};
+use rooklet_core::model::Snapshot;
+use rooklet_macos::profile::Prepared;
 
 #[derive(Debug, Clone)]
 pub enum ProfileOperation {
@@ -178,8 +179,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{NetworkStatus, Profile};
     use crossterm::event::KeyModifiers;
+    use rooklet_core::model::{NetworkStatus, Profile};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -217,7 +218,8 @@ mod tests {
         ));
         app.handle(key(KeyCode::Esc));
         let prepared =
-            crate::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot()).unwrap();
+            rooklet_macos::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot())
+                .unwrap();
         app.profiles_finished(
             snapshot(),
             ProfileOutcome::Prepared {
@@ -233,7 +235,8 @@ mod tests {
         ready(&mut app);
         app.handle(key(KeyCode::Enter));
         let prepared =
-            crate::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot()).unwrap();
+            rooklet_macos::profile::prepare(&Profile::from_snapshot(&snapshot()), &snapshot())
+                .unwrap();
         app.profiles_finished(
             snapshot(),
             ProfileOutcome::Prepared {

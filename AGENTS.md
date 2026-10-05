@@ -25,39 +25,42 @@ compatibility layers, legacy CLI aliases, or old-schema migrations.
   Agents share the workspace; coordinate edits and validate the integrated result.
 - Communicate meaningful findings and finish with actual validation and remaining limitations.
 
-## Code map
+## Workspace and code map
 
-- `src/model.rs`: typed shared data and mutations; strict configuration schemas.
+The workspace has one executable and two internal libraries. Shared dependency
+versions, edition, MSRV, license, and Rust lints live in the root Cargo.toml.
+
+- `crates/rooklet-core/src/`: platform-free models and observation/termination types,
+  captured permission evidence, pure schemas/path validation, PF compilation and
+  rule analysis, and terminal text sanitization.
+- `crates/rooklet-macos/src/`: incoming firewall/PF operations, profile preparation,
+  storage and transactions, GeoIP, filesystem evidence, and bounded subprocess,
+  traffic, process identity/signaling, and resource collection implementations.
 - `src/main.rs`: minimal binary entry point.
-- `src/cli/`: argument definitions, command dispatch, bounded configuration input, and profile commands.
+- `src/cli/`: arguments, dispatch, bounded input, and profile commands.
 - `src/auth.rs` and `src/json.rs`: terminal authentication and CLI output.
-- `src/tui.rs` and `src/tui/`: event routing, terminal lifecycle, and bounded backend worker coordination.
-- `src/app.rs` and `src/app/`: interaction state, selection, filtering, and typed dialogs.
-- `src/ui.rs` and `src/ui/`: view composition, individual views, themes, and modal rendering.
-- `src/profile.rs` and `src/profile/`: shared strict profile preparation, scope review,
-  managed storage, drift checks, and verified application/restoration.
-- `src/presentation.rs`: sanitized display text and traffic formatting.
-- `src/permissions.rs`: verified Activity grouping to exact incoming registrations.
-- `src/backend.rs` and `src/backend/`: backend facade, incoming firewall adapter/parsers,
-  application path validation and live observations.
-- `src/command.rs`: bounded subprocess execution, cancellation, and cleanup.
-- `src/activity.rs` and `src/activity/`: observation facade, CSV parser, counters/grouping,
-  process identity lookup, and monitor lifecycle.
-- `src/process.rs` and `src/process/`: bounded process identity capture, verified app grouping, and confirmed identity-bound signaling.
-- `src/geoip.rs` and `src/geoip/`: offline lookup, bounded country cache, and explicit managed database updates.
-- `src/network.rs` and `src/network/`: PF facade, pure compiler/configuration checks,
-  trusted persistence, subprocess adapter, and lifecycle transactions.
-- `src/network/analysis.rs`: pure hypothetical rule matching and conservative single-rule shadowing.
-- `tests/`: behavior and regression checks; fixtures must retain their provenance and licenses.
-- `tests/visual_preview.rs` and `scripts/render-preview.py`: actual terminal-cell visual previews.
-- `scripts/build-release.sh` and `scripts/package.sh`: explicit macOS target builds and verified archives.
-- `scripts/install.sh` and `scripts/uninstall.sh`: binary-only installation/removal; never change live rules or bypass quarantine.
+- `src/tui.rs` and `src/tui/`: terminal lifecycle, events, and bounded workers.
+- `src/app.rs` and `src/app/`: interaction state, queries, selection, and dialogs.
+- `src/ui.rs` and `src/ui/`: view composition, themes, modal rendering, and mouse geometry.
+- `src/presentation.rs`: application-specific traffic formatting.
+- `tests/`: CLI, interaction, distribution, rendering, and read-only PF syntax regressions.
+- `crates/*/tests/` and private module tests: domain and platform behavior regressions.
+  GeoIP fixtures and their provenance/licenses live in `crates/rooklet-macos/tests/data/`.
+- `tests/visual_preview.rs` and `scripts/render-preview.py`: actual terminal-cell previews.
+- `scripts/build-release.sh` and `scripts/package.sh`: explicit macOS executable
+  target builds and verified binary-only archives.
+- `scripts/install.sh` and `scripts/uninstall.sh`: binary-only installation/removal;
+  never change live rules or bypass quarantine.
 
-Keep facade files focused on composition and their public API. Put substantial
-parsing, rendering, persistence, and transaction logic in modules for those
-responsibilities. Split by cohesion rather than arbitrary line counts; avoid
-catch-all utility modules. Keep implementation modules private and expose only
-the operations their callers need.
+Dependencies flow from the application to both libraries, and from macOS to core.
+Core must not depend on Clap, Ratatui, native APIs, filesystem queries, subprocesses,
+or either other package. Import shared types directly from their owning crate;
+do not restore former application module paths through forwarding re-exports.
+
+Keep facades focused on their public operations. Parsers, subprocess execution,
+native collection, and transaction internals remain private. Keep captured profile
+baselines opaque. Split modules by cohesion rather than arbitrary line counts;
+avoid catch-all utility modules and a crate for every backend.
 
 ## Reliability and security
 
@@ -79,6 +82,11 @@ the operations their callers need.
   Sanitize terminal controls and bidi overrides before rendering.
 - Keep totals and rates distinct, avoid counting both process summaries and their flows, and
   preserve app totals across helper exits. Process grouping must be supported by actual paths.
+- Resource collection stays outside rendering, uses verified PID generations, and remains
+  bounded by time, process count, and cache age. CPU 100% represents one core; memory is an
+  estimated footprint. Keep missing, warming, partial, stale, and disabled readings explicit.
+- Routine cached firewall observations must never replace forced reads for mutations,
+  profile preparation, or explicit refresh. Resource sampling must not delay accepted transactions.
 - Distinguish unavailable, inactive, stale, and observed state. Never fabricate observations
   or claim enforcement from a successfully loaded ruleset alone.
 - Country lookups stay offline. Database updates, if added, must follow the provider's license
@@ -92,11 +100,11 @@ the operations their callers need.
 Run from the repository root:
 
 ```sh
-cargo fmt --check
-cargo check --locked --all-targets
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-cargo build --release --locked
+cargo fmt --all --check
+cargo check --workspace --locked --all-targets
+cargo clippy --workspace --locked --all-targets -- -D warnings
+cargo test --workspace --locked
+cargo build --release --locked --package rooklet --bin rooklet
 ```
 
 Fix compiler and Clippy warnings at their cause. Do not add blanket warning

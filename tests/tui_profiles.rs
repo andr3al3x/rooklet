@@ -4,10 +4,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use rooklet::{
     app::{App, Effect, Popup, ProfileOperation, ProfileOutcome},
-    model::Profile,
-    profile,
     ui::{self, HitMap, Theme},
 };
+use rooklet_core::model::Profile;
+use rooklet_macos::profile;
 
 fn key(app: &mut App, code: KeyCode) -> Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))

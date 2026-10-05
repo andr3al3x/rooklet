@@ -4,9 +4,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use rooklet::{
     app::{App, MouseAction, Popup},
+    ui::{self, Theme},
+};
+use rooklet_core::{
     model::{Action, Application, Mutation, Snapshot},
     permissions::{IncomingState, Index},
-    ui::{self, Theme},
 };
 fn key(app: &mut App, code: KeyCode) -> rooklet::app::Effect {
     app.handle(KeyEvent::new(code, KeyModifiers::NONE))
@@ -131,7 +133,7 @@ fn on_disk_bundle_resolution_handles_nested_helpers_aliases_and_unrelated_names(
         name: "nested bundle".into(),
         blocked: true,
     });
-    snapshot.permission_paths = rooklet::permissions::Paths::capture(&snapshot);
+    snapshot.permission_paths = rooklet_macos::permissions::capture_paths(&snapshot);
     let resolution = Index::new(&snapshot).activity(&snapshot.activity[0]);
     #[cfg(unix)]
     assert_eq!(resolution.state, IncomingState::Mixed);
@@ -193,7 +195,7 @@ fn standalone_executable_alias_matches_identity_without_rewriting_captured_targe
         name: "alias".into(),
         blocked: true,
     }];
-    snapshot.permission_paths = rooklet::permissions::Paths::capture(&snapshot);
+    snapshot.permission_paths = rooklet_macos::permissions::capture_paths(&snapshot);
     let resolution = Index::new(&snapshot).activity(&snapshot.activity[0]);
     assert_eq!(resolution.state, IncomingState::Block);
     assert_eq!(resolution.paths, vec![alias.to_string_lossy().into_owned()]);
@@ -235,12 +237,12 @@ fn frozen_alias_evidence_survives_exit_and_unfreeze_uses_current_identity() {
             blocked: false,
         },
     ];
-    snapshot.permission_paths = rooklet::permissions::Paths::capture(&snapshot);
+    snapshot.permission_paths = rooklet_macos::permissions::capture_paths(&snapshot);
     let mut app = App::new(snapshot.clone());
     key(&mut app, KeyCode::Char(' '));
     let mut next = snapshot.clone();
     next.activity.clear();
-    next.permission_paths = rooklet::permissions::Paths::capture(&next);
+    next.permission_paths = rooklet_macos::permissions::capture_paths(&next);
     app.update(next, false);
     assert_eq!(
         app.incoming(&app.snapshot.activity[0]).state,
@@ -249,7 +251,7 @@ fn frozen_alias_evidence_survives_exit_and_unfreeze_uses_current_identity() {
 
     std::fs::remove_file(&alias).unwrap();
     std::os::unix::fs::symlink(&replacement, &alias).unwrap();
-    snapshot.permission_paths = rooklet::permissions::Paths::capture(&snapshot);
+    snapshot.permission_paths = rooklet_macos::permissions::capture_paths(&snapshot);
     app.update(snapshot, false);
     assert_eq!(
         app.incoming(&app.snapshot.activity[0]).state,

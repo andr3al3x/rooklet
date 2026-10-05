@@ -1,17 +1,17 @@
 //! Identity-bound process control proposals; dispatch happens only after confirmation.
 use super::{App, ConfirmedAction, Popup, clean};
-use crate::process::{TerminationMode, TerminationRequest};
+use rooklet_core::process::{TerminationMode, TerminationRequest};
 
 impl App {
     pub fn termination_finished(
         &mut self,
-        snapshot: crate::model::Snapshot,
-        report: &crate::process::TerminationReport,
+        snapshot: rooklet_core::model::Snapshot,
+        report: &rooklet_core::process::TerminationReport,
     ) {
         self.update(snapshot, false);
         self.termination_report(report);
     }
-    pub fn termination_report(&mut self, report: &crate::process::TerminationReport) {
+    pub fn termination_report(&mut self, report: &rooklet_core::process::TerminationReport) {
         self.busy = false;
         let count = report.delivered.len();
         let noun = if count == 1 { "process" } else { "processes" };
@@ -80,10 +80,10 @@ mod tests {
     use super::*;
     #[test]
     fn reporting_without_a_new_observation_preserves_snapshot_age() {
-        let mut app = App::new(crate::model::Snapshot::default());
+        let mut app = App::new(rooklet_core::model::Snapshot::default());
         app.updated_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(6));
         app.busy = true;
-        app.termination_report(&crate::process::TerminationReport {
+        app.termination_report(&rooklet_core::process::TerminationReport {
             attempted: 1,
             delivered: vec![201],
             failures: Vec::new(),

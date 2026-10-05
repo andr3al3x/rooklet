@@ -1,5 +1,5 @@
 use super::*;
-use rooklet::{
+use rooklet_core::{
     model::{FirewallSettings, Setting},
     process::TerminationMode,
 };
@@ -36,6 +36,8 @@ fn worker_with(callback: impl FnMut(Option<Work>) -> Update + Send + 'static) ->
         cancel,
         thread: Some(thread),
         in_flight: false,
+        interest: Arc::new(Mutex::new(ResourceInterest::default())),
+        refresh: Arc::new(AtomicBool::new(false)),
     }
 }
 

@@ -9,5 +9,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: make check
-      - run: cargo test --locked
+      - run: make test
       - run: make package
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy -p rooklet-core --locked --all-targets -- -D warnings
+      - run: cargo test -p rooklet-core --locked

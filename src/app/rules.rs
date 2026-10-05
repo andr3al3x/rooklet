@@ -1,6 +1,6 @@
 //! Hypothetical connection editing and review of ordered machine-wide policy.
 use super::{App, clean};
-use crate::{
+use rooklet_core::{
     model::{Direction, Mutation, Protocol},
     network::{self, RuleQuery},
 };
@@ -85,7 +85,7 @@ impl RuleProbe {
 }
 
 impl App {
-    pub(super) fn review_network_rules(&mut self, rules: Vec<crate::model::NetworkRule>) {
+    pub(super) fn review_network_rules(&mut self, rules: Vec<rooklet_core::model::NetworkRule>) {
         let warnings = match network::shadow_warnings(&rules) {
             Ok(warnings) => warnings,
             Err(error) => {

@@ -1,4 +1,4 @@
-use rooklet::model::{Action, Direction, NetworkRule, Protocol};
+use rooklet_core::model::{Action, Direction, NetworkRule, Protocol};
 use serde_json::{Value, json};
 use std::{
     io::Write,

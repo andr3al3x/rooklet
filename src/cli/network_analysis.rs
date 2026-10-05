@@ -2,10 +2,10 @@
 use super::{args::InputRules, config::input_rules, network::network_status};
 use crate::json::print_json;
 use anyhow::{Result, ensure};
-use rooklet::{
-    app::clean,
+use rooklet_core::{
     model::NetworkRule,
     network::{self, RuleQuery},
+    text::clean,
 };
 use serde_json::json;
 

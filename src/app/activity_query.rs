@@ -1,10 +1,10 @@
 //! Bounded Activity queries and deterministic presentation ordering.
 use super::selection::process_key;
-use crate::{
+use ipnet::IpNet;
+use rooklet_core::{
     model::{Connection, ProcessActivity, Protocol},
     permissions::IncomingState,
 };
-use ipnet::IpNet;
 use std::{cmp::Ordering, net::IpAddr};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub enum ActivitySort {
     UploadTotal,
     Name,
     Peers,
+    Cpu,
+    Memory,
 }
 impl ActivitySort {
     pub fn next(self) -> Self {
@@ -27,7 +29,9 @@ impl ActivitySort {
             Self::DownloadTotal => Self::UploadTotal,
             Self::UploadTotal => Self::Name,
             Self::Name => Self::Peers,
-            Self::Peers => Self::Snapshot,
+            Self::Peers => Self::Cpu,
+            Self::Cpu => Self::Memory,
+            Self::Memory => Self::Snapshot,
         }
     }
     pub fn label(self) -> &'static str {
@@ -39,9 +43,19 @@ impl ActivitySort {
             Self::UploadTotal => "Upload total",
             Self::Name => "Name",
             Self::Peers => "Peers",
+            Self::Cpu => "CPU",
+            Self::Memory => "Memory footprint",
         }
     }
-    pub(super) fn compare(self, a: &ProcessActivity, b: &ProcessActivity) -> Ordering {
+    pub fn uses_resources(self) -> bool {
+        matches!(self, Self::Cpu | Self::Memory)
+    }
+    pub(super) fn compare(
+        self,
+        a: &ProcessActivity,
+        b: &ProcessActivity,
+        resources: &rooklet_core::resources::Resources,
+    ) -> Ordering {
         let order = match self {
             Self::Snapshot => return Ordering::Equal,
             Self::DownloadRate => b.rate_in.cmp(&a.rate_in),
@@ -50,6 +64,27 @@ impl ActivitySort {
             Self::UploadTotal => b.bytes_out.cmp(&a.bytes_out),
             Self::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             Self::Peers => b.connections.len().cmp(&a.connections.len()),
+            Self::Cpu => {
+                let reading = |process| {
+                    resources
+                        .for_activity(process)
+                        .filter(|usage| usage.state == rooklet_core::resources::ReadingState::Fresh)
+                        .and_then(|usage| usage.cpu_percent)
+                        .filter(|value| value.is_finite() && *value >= 0.0)
+                };
+                reading(b)
+                    .partial_cmp(&reading(a))
+                    .unwrap_or(Ordering::Equal)
+            }
+            Self::Memory => {
+                let reading = |process| {
+                    resources
+                        .for_activity(process)
+                        .filter(|usage| usage.state == rooklet_core::resources::ReadingState::Fresh)
+                        .and_then(|usage| usage.memory_bytes)
+                };
+                reading(b).cmp(&reading(a))
+            }
         };
         order.then_with(|| process_key(a).cmp(&process_key(b)))
     }

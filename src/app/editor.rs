@@ -1,7 +1,7 @@
 //! Modal confirmation and text/choice editing.
 use super::{App, ConfirmedAction, Effect, Popup, clean};
-use crate::model::Mutation;
 use crossterm::event::{KeyCode, KeyEvent};
+use rooklet_core::model::Mutation;
 
 impl App {
     pub(super) fn handle_popup(&mut self, mut popup: Popup, key: KeyEvent) -> Effect {
@@ -13,7 +13,7 @@ impl App {
             return self.handle_profile_popup(popup, key);
         }
         match &mut popup {
-            Popup::Help | Popup::Inspect(_) if key.code == KeyCode::Enter => {
+            Popup::Help | Popup::Inspect { .. } if key.code == KeyCode::Enter => {
                 return Effect::default();
             }
             Popup::Confirm { action, .. } if key.code == KeyCode::Enter => {
@@ -35,7 +35,7 @@ impl App {
                     };
                 }
             }
-            Popup::Confirm { scroll, .. } => match key.code {
+            Popup::Confirm { scroll, .. } | Popup::Inspect { scroll, .. } => match key.code {
                 KeyCode::Up => scroll.set(scroll.get().saturating_sub(1)),
                 KeyCode::Down => scroll.set(scroll.get().saturating_add(1)),
                 KeyCode::PageUp => scroll.set(scroll.get().saturating_sub(8)),

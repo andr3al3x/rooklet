@@ -1,6 +1,6 @@
 //! Confirm captured incoming entries for either a grouped app or one registration.
 use super::{App, View, clean};
-use crate::model::{Action, Mutation};
+use rooklet_core::model::{Action, Mutation};
 impl App {
     pub(super) fn application_action(&mut self, action: Action) {
         if !self.snapshot.applications_available {

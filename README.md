@@ -82,7 +82,7 @@ made with `cargo install`, use `cargo uninstall rooklet` instead.
 
 | View | What you can do | Backend and scope |
 | --- | --- | --- |
-| Activity | View app and helper traffic, peers, countries, rates, and totals; inspect peers; review process termination | Observed activity from macOS `nettop` |
+| Activity | View app and helper traffic, peers, countries, resource usage, and process details; review process termination | Observed traffic from `nettop` and native macOS resource counters |
 | Applications | Add, allow, block, and remove registered incoming permissions | macOS application firewall (`socketfilterfw`) |
 | Network | Add, edit, reorder, and toggle IP/CIDR, port, protocol, direction, and interface rules | PF rules for every application on the Mac |
 | Settings | Turn the incoming firewall on/off; manage stealth, block-all, signed-app defaults, and country data | macOS application firewall and local GeoIP database |
@@ -232,10 +232,44 @@ location. Local/private peers show `Local`; missing data shows `Unknown`.
 Activity rows show peer counts, country summaries, download/upload rates, and
 received/sent totals without selecting an app. Expand an app to see its peers;
 `Enter` on a peer opens the full endpoint. Wider windows add incoming permissions
-and application paths.
+and application paths. At 120 columns or wider, resource columns replace the path
+with captured process count, CPU, and estimated memory footprint. Press `r` or
+click **Resources** to hide these columns and restore the path.
+
+Press `i` or click **Details** to inspect the selected app's captured processes:
+PID, owner UID, parent PID, start time, executable path, CPU, memory, and disk
+read/write rates. Scroll with ↑↓, Page Up/Down, Home/End, or the mouse wheel.
+The inspector also works in narrow terminals; peer details remain available.
+
+Resource counters use native macOS APIs, without additional monitoring processes
+or administrator authentication. Collection runs every two seconds while the
+columns, app inspector, or resource sort are active. Switching views, hiding
+resources, or freezing Activity stops counter collection. Process discovery runs
+every five seconds and caches verified identities and paths. Each observation
+has a cooperative 20 ms collection budget and a 4096-process limit; individual OS
+calls may exceed that budget. Discovery and sampling continue across observations
+when necessary, with visible apps prioritized and fair rotation for other apps.
+
+CPU 100% means one occupied core; multi-core apps can exceed 100%. Memory is the
+sum of captured helpers' physical footprints, an estimate rather than unique
+system-wide memory. Disk rates describe observed process disk I/O, separately
+from network traffic. Helpers without network traffic contribute to resource
+totals when their verified bundle matches the observed app. Resource observation
+covers the current user's accessible processes. Counts reflect captured members.
+
+Memory appears after the first successful sample; CPU and disk rates need two
+observations. `—` means warming up or unavailable;
+`~` marks partial or stale values. Details show sample age and coverage. CPU and
+memory sorting places complete fresh readings first; incomplete readings remain
+explicit. PID reuse, executable changes, failed reads, and resumed sampling reset
+rate baselines. Resource data is observational and never supplies a firewall verdict.
+
+Routine firewall observations are cached for up to five seconds, independently
+of traffic polling. Authentication refresh, mutations, and profile preparation
+force fresh control reads. JSON status includes the control observation's age.
 
 Press `s` or click the Activity table's **Sort** title to cycle observed order,
-download/upload rates, received/sent totals, app name, and peer count. Numeric
+download/upload rates, received/sent totals, app name, peer count, CPU, and memory. Numeric
 sorts put the largest values first; selection follows the same app or peer
 as the list moves.
 
@@ -357,6 +391,20 @@ paths and network policy.
 
 ## Development and packaging
 
+The Cargo workspace contains three packages with one distributed executable:
+
+| Package | Responsibility |
+| --- | --- |
+| `rooklet-core` | Platform-free models, captured evidence, schemas, validation, PF compilation, and rule analysis |
+| `rooklet-macos` | Firewall operations, process identity and signaling, traffic/resource collection, GeoIP, and profile storage/application |
+| `rooklet` | CLI, authentication, TUI interaction state, workers, and rendering |
+
+`rooklet-macos` depends on `rooklet-core`; the application depends on both.
+Core never depends on the platform or UI packages. Parsers, subprocess runners,
+and native collection are private implementation modules. Administrator
+requests use typed operations and never prompt from worker subprocesses.
+The internal libraries are workspace packages, not separately published APIs.
+
 ```sh
 make check
 make test
@@ -364,11 +412,19 @@ make release
 make package
 ```
 
-Checks run formatting, all-target compiler checks, and Clippy with warnings as
-errors. Tests cover command formats, grouping, counters, strict validation,
-configuration drift, cancellation, confirmations, mouse geometry, and rendering.
+For a read-only native sampler timing diagnostic:
+
+```sh
+cargo test -p rooklet-macos --release --locked resources::tests::native_observation_cost_diagnostic -- --ignored --nocapture
+```
+
+Checks cover every workspace package: formatting, all-target compiler checks,
+and Clippy with warnings as errors. Tests cover command formats, grouping,
+counters, strict validation, configuration drift, cancellation, confirmations,
+mouse geometry, and rendering.
 Tests do not change the host firewall; PF syntax checks use `pfctl -n`, and native
-signal tests target only processes they create. GitHub Actions runs checks on macOS.
+signal tests target only processes they create. GitHub Actions runs the full
+workspace on macOS and the platform-free core checks on Linux.
 
 `make release` builds the Rust toolchain's native macOS target explicitly and
 prints the executable path under `target/<target-triple>/release/rooklet`.
@@ -408,5 +464,5 @@ should include the macOS version, terminal, Rooklet version, and relevant
 Rooklet's source code is [MIT licensed](LICENSE). The optional DB-IP country data
 has its own [CC BY 4.0 license](https://creativecommons.org/licenses/by/4.0/).
 The synthetic MaxMind database used in tests is Apache 2.0 licensed; its provenance
-and license are retained in [tests/data](tests/data/README.md). Production country
+and license are retained in [GeoIP test fixtures](crates/rooklet-macos/tests/data/README.md). Production country
 data is downloaded explicitly and is not bundled in this repository or packages.

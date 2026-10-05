@@ -1,7 +1,6 @@
 //! Incoming application permissions and firewall settings.
 use super::{HitMap, theme::Palette};
 use crate::app::{App, SETTINGS, View};
-use crate::presentation::clean;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -9,6 +8,7 @@ use ratatui::{
     text::Line,
     widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
 };
+use rooklet_core::text::clean;
 
 pub(super) fn applications(
     frame: &mut Frame,

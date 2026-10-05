@@ -4,8 +4,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::{Terminal, backend::TestBackend};
 use rooklet::{
     app::{App, ConfirmedAction, Effect, Popup, View},
-    process::{SignalFailure, TerminationMode, TerminationReport, TerminationRequest},
     ui::{self, Theme},
+};
+use rooklet_core::process::{
+    SignalFailure, TerminationMode, TerminationReport, TerminationRequest,
 };
 
 fn key(app: &mut App, code: KeyCode) -> Effect {

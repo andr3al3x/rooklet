@@ -1,7 +1,7 @@
 //! Bounded JSON configuration input.
 use super::args::InputRules;
 use anyhow::{Context, Result, ensure};
-use rooklet::{model::NetworkRule, network};
+use rooklet_core::{model::NetworkRule, network};
 use std::{
     fs,
     io::{self, Read},

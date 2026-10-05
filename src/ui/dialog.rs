@@ -4,7 +4,6 @@ mod profiles;
 mod rules;
 use super::{HitMap, mouse::shortcuts, theme::Palette};
 use crate::app::{App, ConfirmedAction, Popup};
-use crate::presentation::clean;
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
@@ -13,6 +12,7 @@ use ratatui::{
     text::Line,
     widgets::{Clear, Paragraph, Wrap},
 };
+use rooklet_core::text::clean;
 use std::cell::Cell;
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
@@ -35,15 +35,26 @@ pub(super) fn draw(
 ) {
     let (title, height) = match popup {
         Popup::Help => ("KEYBOARD & MOUSE", 26),
-        Popup::Inspect(_) => ("CONNECTION", 16),
+        Popup::Inspect { key, .. } => {
+            if app
+                .snapshot
+                .activity
+                .iter()
+                .any(|process| crate::app::process_key(process) == *key)
+            {
+                ("PROCESS DETAILS · CACHED", 28)
+            } else {
+                ("CONNECTION", 16)
+            }
+        }
         Popup::Confirm { title, action, .. } => (
             title.as_str(),
             if matches!(action, ConfirmedAction::Terminate(_)) {
                 16
-            } else if matches!(action, ConfirmedAction::Firewall(crate::model::Mutation::Applications { paths, .. }) if paths.len() > 1)
+            } else if matches!(action, ConfirmedAction::Firewall(rooklet_core::model::Mutation::Applications { paths, .. }) if paths.len() > 1)
                 || matches!(
                     action,
-                    ConfirmedAction::Firewall(crate::model::Mutation::NetworkRules(_))
+                    ConfirmedAction::Firewall(rooklet_core::model::Mutation::NetworkRules(_))
                 )
                 || matches!(action, ConfirmedAction::Profile(_))
             {
@@ -63,7 +74,7 @@ pub(super) fn draw(
     };
     let rect = centered(area, 76, height);
     frame.render_widget(Clear, rect);
-    let border = if matches!(popup, Popup::Confirm { action: ConfirmedAction::Terminate(request), .. } if request.mode == crate::process::TerminationMode::ForceKill)
+    let border = if matches!(popup, Popup::Confirm { action: ConfirmedAction::Terminate(request), .. } if request.mode == rooklet_core::process::TerminationMode::ForceKill)
     {
         p.bad
     } else {
@@ -87,8 +98,8 @@ pub(super) fn draw(
         } => &[
             (
                 match request.mode {
-                    crate::process::TerminationMode::Terminate => "[Enter Terminate]",
-                    crate::process::TerminationMode::ForceKill => "[Enter Force kill]",
+                    rooklet_core::process::TerminationMode::Terminate => "[Enter Terminate]",
+                    rooklet_core::process::TerminationMode::ForceKill => "[Enter Force kill]",
                 },
                 KeyCode::Enter,
             ),
@@ -112,7 +123,9 @@ pub(super) fn draw(
             ("[Enter Export]", KeyCode::Enter),
             ("[Esc Cancel]", KeyCode::Esc),
         ],
-        Popup::Help | Popup::Inspect(_) | Popup::Explain { .. } => &[("[Esc Close]", KeyCode::Esc)],
+        Popup::Help | Popup::Inspect { .. } | Popup::Explain { .. } => {
+            &[("[Esc Close]", KeyCode::Esc)]
+        }
     };
     let mut choices = choices.to_vec();
     let more = match popup {
@@ -156,16 +169,19 @@ pub(super) fn draw(
             p,
             None,
         ),
-        Popup::Inspect(key) => render_text(
-            frame,
-            content,
-            information::inspect(app, key)
-                .into_iter()
-                .map(Line::raw)
-                .collect(),
-            p,
-            None,
-        ),
+        Popup::Inspect { key, scroll } => {
+            hits.dialog_scroll(content);
+            render_text(
+                frame,
+                content,
+                information::inspect(app, key)
+                    .into_iter()
+                    .map(Line::raw)
+                    .collect(),
+                p,
+                Some(scroll),
+            )
+        }
         Popup::Application { path } => render_text(
             frame,
             content,

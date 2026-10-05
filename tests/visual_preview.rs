@@ -9,10 +9,10 @@ use ratatui::{
 };
 use rooklet::{
     app::{App, ProfileOutcome, View},
-    model::{Profile, Snapshot},
-    profile,
     ui::{self, Theme},
 };
+use rooklet_core::model::{Profile, Snapshot};
+use rooklet_macos::profile;
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -33,6 +33,10 @@ fn export_terminal_cells() {
     for (name, width, height) in [
         ("activity", 120, 34),
         ("activity", 80, 24),
+        ("activity-resources", 120, 34),
+        ("activity-resources", 160, 40),
+        ("process-details", 120, 34),
+        ("process-details", 80, 24),
         ("network-filtered", 120, 34),
         ("network-filtered", 80, 24),
         ("settings", 120, 34),
@@ -50,6 +54,52 @@ fn export_terminal_cells() {
         } else {
             common::snapshot()
         });
+        if name == "activity-resources" || name == "process-details" {
+            use rooklet_core::resources::{ProcessReading, ReadingState, Usage};
+            app.snapshot.resources.enabled = true;
+            for (index, process) in app.snapshot.activity.iter().enumerate() {
+                app.snapshot.resources.groups.insert(
+                    process.identities[0]
+                        .bundle_path
+                        .clone()
+                        .unwrap_or_else(|| format!("pid:{}", process.pid)),
+                    Usage {
+                        process_count: process.identities.len(),
+                        sampled_count: usize::from(index == 0),
+                        cpu_percent: (index == 0).then_some(42.7),
+                        memory_bytes: (index == 0).then_some(256 * 1024 * 1024),
+                        read_per_sec: Some(4096),
+                        write_per_sec: Some(2048),
+                        age_ms: Some(100),
+                        state: if index == 0 {
+                            ReadingState::Partial
+                        } else {
+                            ReadingState::WarmingUp
+                        },
+                        processes: process
+                            .identities
+                            .iter()
+                            .map(|identity| ProcessReading {
+                                identity: identity.clone(),
+                                cpu_percent: (index == 0).then_some(21.35),
+                                memory_bytes: (index == 0).then_some(128 * 1024 * 1024),
+                                read_per_sec: Some(2048),
+                                write_per_sec: Some(1024),
+                                age_ms: Some(100),
+                                state: if index == 0 {
+                                    ReadingState::Partial
+                                } else {
+                                    ReadingState::WarmingUp
+                                },
+                            })
+                            .collect(),
+                    },
+                );
+            }
+            if name == "process-details" {
+                app.handle(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+            }
+        }
         if name == "settings" {
             app.view = View::Settings;
         } else if name == "network-filtered" {

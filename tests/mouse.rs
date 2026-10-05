@@ -4,9 +4,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use rooklet::{
     app::{App, Effect, MouseAction, Popup, SETTINGS, View},
-    model::{Action, Application, Mutation, Protocol},
     ui::{self, HitMap, Theme},
 };
+use rooklet_core::model::{Action, Application, Mutation, Protocol};
 
 fn fixture_app() -> App {
     App::new(common::snapshot())
@@ -100,7 +100,7 @@ fn activity_row_click_selects_double_click_expands_and_gutter_collapses() {
     let peer = app.snapshot.activity[0].connections[0].remote_ip.clone();
     click(&mut app, &peer);
     click(&mut app, &peer);
-    assert!(matches!(app.popup, Some(Popup::Inspect(_))));
+    assert!(matches!(app.popup, Some(Popup::Inspect { .. })));
     click(&mut app, "[Esc Close]");
     let (hits, buffer) = render(&app, 80, 24);
     let (_, row) = point(&buffer, &name);

@@ -25,6 +25,65 @@ pub struct State {
     tables: [TableState; 4],
 }
 
+impl State {
+    /// Match collection to the rendered viewport. Hidden resource panels do no counter work.
+    pub fn resource_interest(
+        &self,
+        app: &App,
+        area: Rect,
+    ) -> rooklet_core::resources::ResourceInterest {
+        let inspected = match &app.popup {
+            Some(crate::app::Popup::Inspect { key, .. }) => app
+                .snapshot
+                .activity
+                .iter()
+                .find(|process| crate::app::process_key(process) == *key),
+            _ => None,
+        };
+        let enabled = app.view == View::Activity
+            && !app.paused
+            && app.resources_visible
+            && area.height >= 17
+            && (inspected.is_some()
+                || (app.popup.is_none()
+                    && (area.width >= 120 || app.activity_sort.uses_resources())));
+        if !enabled {
+            return rooklet_core::resources::ResourceInterest::default();
+        }
+        let rows = app.activity_rows();
+        let mut priority_pids = Vec::new();
+        if let Some(process) = inspected {
+            priority_pids.push(process.pid);
+        }
+        if let Some(index) = app.selected_index()
+            && let Some(row) = rows.get(index)
+        {
+            priority_pids.push(row.process().pid);
+        }
+        for row in rows
+            .iter()
+            .skip(self.tables[0].offset())
+            .take(usize::from(area.height).min(128))
+        {
+            let pid = row.process().pid;
+            if !priority_pids.contains(&pid) {
+                priority_pids.push(pid);
+            }
+        }
+        rooklet_core::resources::ResourceInterest {
+            enabled,
+            tracked_pids: app
+                .snapshot
+                .activity
+                .iter()
+                .map(|process| process.pid)
+                .take(4096)
+                .collect(),
+            priority_pids,
+        }
+    }
+}
+
 pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     draw_interactive(frame, app, theme, &mut State::default());
 }
@@ -87,7 +146,7 @@ pub fn draw_interactive(frame: &mut Frame, app: &App, theme: Theme, state: &mut 
 
 fn message(frame: &mut Frame, area: Rect, title: &str, text: &str, palette: Palette) {
     frame.render_widget(
-        Paragraph::new(crate::presentation::clean(text))
+        Paragraph::new(rooklet_core::text::clean(text))
             .block(palette.block(title))
             .style(palette.muted())
             .wrap(Wrap { trim: true }),

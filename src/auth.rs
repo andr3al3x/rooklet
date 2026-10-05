@@ -3,7 +3,7 @@ use anyhow::{Context, Result, ensure};
 use std::process::Command;
 
 pub(crate) fn authenticate() -> Result<()> {
-    if rooklet::command::is_root() {
+    if rooklet_macos::is_root() {
         return Ok(());
     }
     let status = Command::new("/usr/bin/sudo")

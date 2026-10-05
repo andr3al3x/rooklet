@@ -1,8 +1,6 @@
 //! Explicit hypothetical packet fields, separate from observed peer metadata.
 use crate::{
     app::{App, MouseAction, NetworkDraft, RuleProbe},
-    network::{self, QueryField, RuleExplanation},
-    presentation::clean,
     ui::{HitMap, theme::Palette},
 };
 use ratatui::{
@@ -12,6 +10,8 @@ use ratatui::{
     text::Line,
     widgets::{Paragraph, Wrap},
 };
+use rooklet_core::network::{self, QueryField, RuleExplanation};
+use rooklet_core::text::clean;
 
 pub(super) fn explain(
     frame: &mut Frame,

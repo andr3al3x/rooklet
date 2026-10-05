@@ -1,8 +1,12 @@
 //! Resolve CLI input to exact ALF registrations before authentication.
 use anyhow::{Result, ensure};
-use rooklet::{
-    backend::{Backend, registration_path, validate_application_path},
+use rooklet_core::{
+    application::validate_path,
     model::{Application, Mutation},
+};
+use rooklet_macos::{
+    application::{registration_path, validate_existing_path},
+    backend::Backend,
 };
 
 pub(super) fn resolve_path(
@@ -10,7 +14,7 @@ pub(super) fn resolve_path(
     current: &[Application],
     resolve: &mut impl FnMut(&str) -> Result<String>,
 ) -> Result<String> {
-    validate_application_path(path, false)?;
+    validate_path(path)?;
     if current.iter().any(|app| app.path == path) {
         return Ok(path.to_owned());
     }
@@ -33,7 +37,7 @@ fn registered_path(
 pub(super) fn preflight(backend: &mut Backend, mutation: Mutation) -> Result<Mutation> {
     match mutation {
         Mutation::AddApplication(path) => {
-            validate_application_path(&path, false)?;
+            validate_path(&path)?;
             let path = registration_path(&path)?;
             Ok(Mutation::AddApplication(path))
         }
@@ -48,7 +52,7 @@ pub(super) fn preflight(backend: &mut Backend, mutation: Mutation) -> Result<Mut
                 .map(|path| {
                     let path =
                         registered_path(path, &current.applications, &mut registration_path)?;
-                    validate_application_path(&path, true)?;
+                    validate_existing_path(&path)?;
                     Ok(path)
                 })
                 .collect::<Result<Vec<_>>>()?;

@@ -1,7 +1,7 @@
 //! Keyboard routing, confirmation, and dialog editing.
 use super::{ActivityRow, App, Effect, NetworkDraft, Popup, SETTINGS, View, clean, process_key};
-use crate::model::{Action, Mutation};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use rooklet_core::model::{Action, Mutation};
 
 impl App {
     pub(super) fn confirm(&mut self, title: &str, body: String, mutation: Mutation) {
@@ -48,15 +48,33 @@ impl App {
                     );
                 }
             }
+            KeyCode::Char('r') if self.view == View::Activity => {
+                self.resources_visible = !self.resources_visible;
+                if !self.resources_visible && self.activity_sort.uses_resources() {
+                    self.activity_sort = super::ActivitySort::Snapshot;
+                    self.reconcile();
+                }
+            }
+            KeyCode::Char('i') if self.view == View::Activity => {
+                if let Some(row) = self.activity_rows().get(self.selected_index().unwrap_or(0)) {
+                    self.popup = Some(Popup::Inspect {
+                        key: row.key(),
+                        scroll: Default::default(),
+                    });
+                }
+            }
             KeyCode::Char('s') if self.view == View::Activity => {
                 self.activity_sort = self.activity_sort.next();
+                if self.activity_sort.uses_resources() {
+                    self.resources_visible = true;
+                }
                 self.reconcile();
             }
             KeyCode::Char(c @ ('x' | 'X')) if !self.busy && self.view == View::Activity => {
                 self.termination_action(if c == 'x' {
-                    crate::process::TerminationMode::Terminate
+                    rooklet_core::process::TerminationMode::Terminate
                 } else {
-                    crate::process::TerminationMode::ForceKill
+                    rooklet_core::process::TerminationMode::ForceKill
                 });
             }
             KeyCode::Char('g') if !self.busy && self.view == View::Settings => {
@@ -100,6 +118,7 @@ impl App {
                 self.paused = !self.paused;
                 if !self.paused {
                     self.snapshot.activity = self.live_activity.clone();
+                    self.snapshot.resources = self.live_resources.clone();
                     self.snapshot.permission_paths = self.live_paths.clone();
                     self.prune_expanded();
                     self.reconcile();
@@ -216,7 +235,10 @@ impl App {
                             }
                         }
                         ActivityRow::Connection(_, _) => {
-                            self.popup = Some(Popup::Inspect(row.key()))
+                            self.popup = Some(Popup::Inspect {
+                                key: row.key(),
+                                scroll: Default::default(),
+                            })
                         }
                     }
                 }

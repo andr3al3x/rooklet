@@ -1,14 +1,14 @@
 //! Machine-wide PF rule table and setup/status states.
 use super::{HitMap, theme::Palette};
 use crate::app::{App, View};
-use crate::model::Action;
-use crate::presentation::clean;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
 };
+use rooklet_core::model::Action;
+use rooklet_core::text::clean;
 
 pub(super) fn draw(
     frame: &mut Frame,

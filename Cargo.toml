@@ -1,12 +1,16 @@
-[package]
-name = "rooklet"
+[workspace]
+members = ["crates/rooklet-core", "crates/rooklet-macos"]
+resolver = "3"
+
+[workspace.package]
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
-description = "A standalone terminal firewall manager and traffic monitor for macOS"
 license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
+rooklet-core = { path = "crates/rooklet-core" }
+rooklet-macos = { path = "crates/rooklet-macos" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
@@ -22,6 +26,35 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 flate2 = "1"
 tempfile = "3"
 time = { version = "0.3", default-features = false, features = ["std"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[package]
+name = "rooklet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "A standalone terminal firewall manager and traffic monitor for macOS"
+
+[lints]
+workspace = true
+
+[dependencies]
+rooklet-core.workspace = true
+rooklet-macos.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+unicode-segmentation.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ipnet.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [profile.release]
 lto = "thin"

@@ -12,7 +12,7 @@ for argument in "$@"; do
 done
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary_path=$(sh "$project_dir/scripts/build-release.sh" "$@")
-package_id=$(cargo pkgid --manifest-path "$project_dir/Cargo.toml" --locked)
+package_id=$(cargo pkgid --manifest-path "$project_dir/Cargo.toml" --package rooklet --locked)
 release_version=${package_id##*#}
 release_version=${release_version##*@}
 case "$release_version" in ''|*[!0-9A-Za-z.+-]*) printf '%s\n' 'invalid release version' >&2; exit 1 ;; esac

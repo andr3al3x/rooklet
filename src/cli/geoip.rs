@@ -9,7 +9,7 @@ pub(super) fn run(command: GeoipCommand) -> Result<()> {
             println!("Updating country database…");
             println!(
                 "{}",
-                rooklet::clean(&rooklet::geoip::update(&AtomicBool::new(false))?)
+                rooklet_core::text::clean(&rooklet_macos::geoip::update(&AtomicBool::new(false))?)
             );
         }
     }

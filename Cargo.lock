@@ -1365,17 +1365,40 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "ipnet",
+ "ratatui",
+ "rooklet-core",
+ "rooklet-macos",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "rooklet-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "ipnet",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rooklet-macos"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
  "csv",
  "flate2",
- "ipnet",
  "libc",
  "maxminddb",
- "ratatui",
+ "rooklet-core",
  "serde",
  "serde_json",
  "tempfile",
  "time",
- "unicode-segmentation",
  "ureq",
 ]
 

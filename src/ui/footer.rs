@@ -1,11 +1,9 @@
 //! Context-sensitive shortcuts wrapped using rendered terminal-cell widths.
 use super::{HitMap, mouse::shortcuts, theme::Palette};
-use crate::{
-    app::{App, View},
-    presentation::clean,
-};
+use crate::app::{App, View};
 use crossterm::event::KeyCode;
 use ratatui::{Frame, layout::Rect, style::Style, text::Line, widgets::Paragraph};
+use rooklet_core::text::clean;
 type Choice = (&'static str, KeyCode);
 const GLOBAL: [Choice; 4] = [
     ("[/ Search]", KeyCode::Char('/')),
@@ -21,6 +19,8 @@ fn choices(view: View) -> &'static [Choice] {
             ("[b Block]", KeyCode::Char('b')),
             ("[n IP rule]", KeyCode::Char('n')),
             ("[s Sort]", KeyCode::Char('s')),
+            ("[i Details]", KeyCode::Char('i')),
+            ("[r Resources]", KeyCode::Char('r')),
             ("[Space Freeze]", KeyCode::Char(' ')),
             ("[x Terminate]", KeyCode::Char('x')),
             ("[X Force kill]", KeyCode::Char('X')),

@@ -31,7 +31,9 @@ impl App {
                 return self.handle(KeyEvent::new(code, KeyModifiers::NONE));
             }
             MouseAction::DialogScroll(delta) => {
-                if let Some(Popup::Confirm { scroll, .. }) = &self.popup {
+                if let Some(Popup::Confirm { scroll, .. } | Popup::Inspect { scroll, .. }) =
+                    &self.popup
+                {
                     scroll.set(
                         scroll
                             .get()

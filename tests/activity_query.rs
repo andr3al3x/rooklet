@@ -1,9 +1,8 @@
 mod common;
 
-use rooklet::{
-    app::{ActivityRow, ActivitySort, App, process_key},
-    model::{Application, Connection, Country, ProcessActivity, Protocol},
-};
+use rooklet::app::{ActivityRow, ActivitySort, App, process_key};
+
+use rooklet_core::model::{Application, Connection, Country, ProcessActivity, Protocol};
 
 fn peer(ip: &str, port: u16, protocol: Protocol, local: bool) -> Connection {
     Connection {
@@ -211,7 +210,7 @@ fn sort_cycle_covers_metrics_and_descending_numeric_order() {
         assert_eq!(rows(&app), vec!["process:10", "process:20"]);
     }
     let mut sort = ActivitySort::default();
-    for _ in 0..7 {
+    for _ in 0..9 {
         assert!(!sort.label().is_empty());
         sort = sort.next();
     }

@@ -1,12 +1,13 @@
+use rooklet_core::text::clean;
 mod common;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use rooklet::{
-    app::{App, Popup, View, clean},
-    model::*,
+    app::{App, Popup, View},
     ui::{self, Theme},
 };
+use rooklet_core::model::*;
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }

@@ -5,14 +5,18 @@ use crate::{
     json::{print_json, write_json},
 };
 use anyhow::{Context, Result, ensure};
-use rooklet::{backend::Backend, clean, clean_multiline, profile};
+use rooklet_core::{
+    profile::export,
+    text::{clean, clean_multiline},
+};
+use rooklet_macos::{backend::Backend, profile};
 use std::fs;
 
 pub(super) fn run(command: ProfileCommand) -> Result<()> {
     match command {
         ProfileCommand::Export { path } => {
             let mut backend = Backend::new()?;
-            let profile = profile::export(&backend.snapshot()?)?;
+            let profile = export(&backend.snapshot()?)?;
             if let Some(path) = path {
                 let mut file = fs::OpenOptions::new()
                     .write(true)

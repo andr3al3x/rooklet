@@ -3,12 +3,12 @@ BIN_DIR ?= $(HOME)/.local/bin
 TARGET ?=
 
 check:
-	cargo fmt --check
-	cargo check --locked --all-targets
-	cargo clippy --locked --all-targets -- -D warnings
+	cargo fmt --all --check
+	cargo check --workspace --locked --all-targets
+	cargo clippy --workspace --locked --all-targets -- -D warnings
 	for script_path in scripts/*.sh; do sh -n "$$script_path" || exit; done
 test:
-	cargo test --locked
+	cargo test --workspace --locked
 release:
 	sh scripts/build-release.sh $(if $(TARGET),--target "$(TARGET)")
 install:

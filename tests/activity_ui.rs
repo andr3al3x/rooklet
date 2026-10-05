@@ -4,9 +4,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use rooklet::{
     app::{App, Popup, process_key},
-    model::Application,
     ui::{self, Theme},
 };
+use rooklet_core::model::Application;
 
 fn fixture_app() -> App {
     let mut snapshot = common::snapshot();
@@ -135,6 +135,7 @@ fn expanded_peers_have_totals_but_never_inherit_process_rates() {
 #[test]
 fn incoming_entries_match_paths_and_distinguish_unavailable_and_unlisted() {
     let mut app = fixture_app();
+    app.resources_visible = false;
     let terminal_path = app.snapshot.activity[1].path.clone().unwrap();
     app.snapshot.applications.push(Application {
         path: terminal_path.clone(),
@@ -238,7 +239,7 @@ fn narrow_ipv6_rows_preserve_inspection_and_sanitize_untrusted_text() {
     }
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);
-    assert!(matches!(app.popup, Some(Popup::Inspect(_))));
+    assert!(matches!(app.popup, Some(Popup::Inspect { .. })));
     let inspection = lines(&render(&app, 120, 34)).join("\n");
     assert!(inspection.contains(address));
     assert!(inspection.contains("port 443"));
@@ -319,7 +320,8 @@ fn an_empty_filtered_table_reports_no_matches_instead_of_waiting_for_traffic() {
 
 #[test]
 fn wide_path_cells_preserve_app_names_and_complete_directory_components() {
-    let app = fixture_app();
+    let mut app = fixture_app();
+    app.resources_visible = false;
     let safari_path = app.snapshot.activity[0].path.as_deref().unwrap();
     for (width, height) in [(120, 34), (140, 40)] {
         let buffer = render(&app, width, height);
@@ -368,7 +370,7 @@ fn an_open_inspector_tracks_the_sample_independently_of_filter_changes() {
     key(&mut app, KeyCode::Enter);
     key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);
-    assert!(matches!(app.popup, Some(Popup::Inspect(_))));
+    assert!(matches!(app.popup, Some(Popup::Inspect { .. })));
     app.filters[0] = "incoming:block".into();
     assert!(
         app.activity_rows()
@@ -388,4 +390,231 @@ fn an_open_inspector_tracks_the_sample_independently_of_filter_changes() {
             .join("\n")
             .contains("no longer in the current sample")
     );
+}
+
+fn add_resources(app: &mut App) {
+    use rooklet_core::resources::{ProcessReading, ReadingState, Usage};
+    app.snapshot.resources.enabled = true;
+    let process = &app.snapshot.activity[0];
+    app.snapshot.resources.groups.insert(
+        process.path.clone().unwrap(),
+        Usage {
+            process_count: 2,
+            sampled_count: 2,
+            cpu_percent: Some(125.5),
+            memory_bytes: Some(64 * 1024 * 1024),
+            read_per_sec: Some(4096),
+            write_per_sec: Some(2048),
+            state: ReadingState::Fresh,
+            age_ms: Some(100),
+            processes: process
+                .identities
+                .iter()
+                .map(|identity| ProcessReading {
+                    identity: identity.clone(),
+                    cpu_percent: Some(62.75),
+                    memory_bytes: Some(32 * 1024 * 1024),
+                    read_per_sec: Some(2048),
+                    write_per_sec: Some(1024),
+                    state: ReadingState::Fresh,
+                    age_ms: Some(100),
+                })
+                .collect(),
+        },
+    );
+}
+
+#[test]
+fn resources_replace_paths_at_wide_sizes_and_leave_narrow_network_columns() {
+    let mut app = fixture_app();
+    add_resources(&mut app);
+    for width in [80, 120, 160] {
+        let buffer = render(&app, width, 34);
+        let text = lines(&buffer).join("\n");
+        if width == 80 {
+            assert!(!text.contains("CPU %"));
+        } else {
+            let safari = row(&buffer, "Safari");
+            assert_eq!(cell(&buffer, safari, "Procs", Some("CPU %")), "2");
+            assert_eq!(cell(&buffer, safari, "CPU %", Some("Mem est")), "125.5%");
+            assert_eq!(cell(&buffer, safari, "Mem est", None), "64MiB");
+            assert!(!text.contains("Path"));
+            assert!(text.contains("CPU 100% = 1 core"));
+            assert_eq!(
+                cell(&buffer, row(&buffer, "Terminal"), "CPU %", Some("Mem est")),
+                "—"
+            );
+        }
+        assert!(text.contains("↓ Total"));
+        assert!(text.contains("↑ Total"));
+    }
+    key(&mut app, KeyCode::Char('r'));
+    assert!(!app.resources_visible);
+    assert!(lines(&render(&app, 120, 34)).join("\n").contains("Path"));
+}
+
+#[test]
+fn partial_stale_warming_and_disabled_resources_are_explicit() {
+    use rooklet_core::resources::ReadingState;
+    let mut app = fixture_app();
+    add_resources(&mut app);
+    let resource_key = app.snapshot.activity[0].path.clone().unwrap();
+    for state in [
+        ReadingState::Partial,
+        ReadingState::Stale,
+        ReadingState::WarmingUp,
+        ReadingState::Unavailable,
+    ] {
+        app.snapshot
+            .resources
+            .groups
+            .get_mut(&resource_key)
+            .unwrap()
+            .state = state;
+        let buffer = render(&app, 120, 34);
+        let value = cell(&buffer, row(&buffer, "Safari"), "CPU %", Some("Mem est"));
+        assert_eq!(
+            cell(&buffer, row(&buffer, "Safari"), "Procs", Some("CPU %")),
+            if matches!(state, ReadingState::Partial | ReadingState::Stale) {
+                "~2"
+            } else {
+                "2"
+            }
+        );
+        assert_eq!(
+            value,
+            if matches!(state, ReadingState::Partial | ReadingState::Stale) {
+                "~125.5%"
+            } else {
+                "—"
+            }
+        );
+        assert_eq!(
+            cell(&buffer, row(&buffer, "Safari"), "Mem est", None),
+            match state {
+                ReadingState::Partial | ReadingState::Stale => "~64MiB",
+                ReadingState::WarmingUp => "64MiB",
+                _ => "—",
+            }
+        );
+    }
+    app.snapshot.activity[1].identities.clear();
+    let buffer = render(&app, 120, 34);
+    assert_eq!(
+        cell(&buffer, row(&buffer, "Terminal"), "Procs", Some("CPU %")),
+        "—"
+    );
+    app.snapshot.resources.enabled = false;
+    let buffer = render(&app, 120, 34);
+    assert_eq!(
+        cell(&buffer, row(&buffer, "Safari"), "CPU %", Some("Mem est")),
+        "—"
+    );
+}
+
+#[test]
+fn process_inspection_scrolls_cached_details_and_preserves_enter_expansion() {
+    let mut app = fixture_app();
+    app.snapshot.activity[0].identities[0]
+        .path
+        .push_str("\u{1b}\u{202e}");
+    add_resources(&mut app);
+    key(&mut app, KeyCode::Char('i'));
+    assert!(matches!(app.popup, Some(Popup::Inspect { .. })));
+    let buffer = render(&app, 120, 34);
+    let text = lines(&buffer).join("\n");
+    assert!(text.contains("PROCESS DETAILS"));
+    assert!(text.contains("owner UID 1000"));
+    assert!(text.contains("parent PID 1"));
+    assert!(text.contains("Unix seconds"));
+    assert!(text.contains("Disk read:"));
+    assert!(!text.chars().any(|ch| ch == '\u{1b}' || ch == '\u{202e}'));
+    key(&mut app, KeyCode::PageDown);
+    assert!(matches!(&app.popup, Some(Popup::Inspect { scroll, .. }) if scroll.get() > 0));
+    key(&mut app, KeyCode::End);
+    assert!(
+        lines(&render(&app, 80, 24))
+            .join("\n")
+            .contains("Esc closes")
+    );
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Enter);
+    assert!(
+        app.expanded
+            .contains(&process_key(&app.snapshot.activity[0]))
+    );
+    assert!(app.popup.is_none());
+}
+
+#[test]
+fn resource_columns_share_row_hit_geometry_and_details_capture_wheel_events() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use rooklet::app::{MouseAction, View};
+    let mut app = fixture_app();
+    add_resources(&mut app);
+    for width in [80, 120, 160] {
+        let mut terminal = Terminal::new(TestBackend::new(width, 34)).unwrap();
+        let mut hits = None;
+        terminal
+            .draw(|frame| {
+                hits = Some(ui::draw_interactive(
+                    frame,
+                    &app,
+                    Theme::Dark,
+                    &mut ui::State::default(),
+                ))
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let x = if width >= 120 {
+            header_column(buffer, "CPU %")
+        } else {
+            header_column(buffer, "Country")
+        };
+        let action = hits.unwrap().action(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: row(buffer, "Safari"),
+            modifiers: KeyModifiers::NONE,
+        });
+        assert!(
+            matches!(action, Some(MouseAction::Row { view: View::Activity, key, .. }) if key == process_key(&app.snapshot.activity[0]))
+        );
+    }
+    key(&mut app, KeyCode::Char('i'));
+    let mut terminal = Terminal::new(TestBackend::new(120, 34)).unwrap();
+    let mut hits = None;
+    terminal
+        .draw(|frame| {
+            hits = Some(ui::draw_interactive(
+                frame,
+                &app,
+                Theme::Dark,
+                &mut ui::State::default(),
+            ))
+        })
+        .unwrap();
+    assert!(matches!(
+        hits.unwrap().action(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 40,
+            row: 12,
+            modifiers: KeyModifiers::NONE,
+        }),
+        Some(MouseAction::DialogScroll(3))
+    ));
+}
+
+#[test]
+fn resource_sort_enables_columns_and_disabling_resources_restores_observed_order() {
+    use rooklet::app::ActivitySort;
+    let mut app = fixture_app();
+    app.resources_visible = false;
+    app.activity_sort = ActivitySort::Peers;
+    key(&mut app, KeyCode::Char('s'));
+    assert_eq!(app.activity_sort, ActivitySort::Cpu);
+    assert!(app.resources_visible);
+    key(&mut app, KeyCode::Char('r'));
+    assert_eq!(app.activity_sort, ActivitySort::Snapshot);
+    assert!(!app.resources_visible);
 }

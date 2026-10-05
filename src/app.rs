@@ -10,15 +10,15 @@ mod rules;
 mod selection;
 mod termination;
 
-pub use crate::presentation::{bytes, clean, countries};
 pub use activity_query::ActivitySort;
 pub use dialog::{ConfirmedAction, NetworkDraft, Popup};
 pub use mouse::MouseAction;
 pub use profiles::{ProfileOperation, ProfileOutcome};
+use rooklet_core::text::clean;
 pub use rules::RuleProbe;
 pub use selection::{ActivityRow, process_key};
 
-use crate::model::{Mutation, NetworkStatus, ProcessActivity, Setting, Snapshot};
+use rooklet_core::model::{Mutation, NetworkStatus, ProcessActivity, Setting, Snapshot};
 use std::{
     collections::{HashSet, VecDeque},
     time::Instant,
@@ -71,7 +71,7 @@ pub struct Effect {
     pub mutation: Option<Mutation>,
     pub authenticate: bool,
     pub update_geoip: bool,
-    pub terminate: Option<crate::process::TerminationRequest>,
+    pub terminate: Option<rooklet_core::process::TerminationRequest>,
     pub profile: Option<ProfileOperation>,
 }
 pub struct Notice {
@@ -88,12 +88,14 @@ pub struct App {
     pub searching: bool,
     pub filters: [String; 4],
     pub activity_sort: ActivitySort,
+    pub resources_visible: bool,
     pub selection: [Option<String>; 4],
     pub expanded: HashSet<String>,
     pub chart: VecDeque<(u64, u64)>,
     pub notice: Option<Notice>,
     live_activity: Vec<ProcessActivity>,
-    live_paths: crate::permissions::Paths,
+    live_resources: rooklet_core::resources::Resources,
+    live_paths: rooklet_core::permissions::Paths,
     updated_at: Option<Instant>,
     last_mouse_click: Option<(View, String, Instant)>,
     pending_profile: Option<profiles::Pending>,
@@ -102,6 +104,7 @@ impl App {
     pub fn new(snapshot: Snapshot) -> Self {
         let mut app = Self {
             live_activity: snapshot.activity.clone(),
+            live_resources: snapshot.resources.clone(),
             live_paths: snapshot.permission_paths.clone(),
             snapshot,
             view: View::Activity,
@@ -111,6 +114,7 @@ impl App {
             searching: false,
             filters: Default::default(),
             activity_sort: Default::default(),
+            resources_visible: true,
             selection: Default::default(),
             expanded: HashSet::new(),
             chart: VecDeque::new(),
@@ -124,12 +128,14 @@ impl App {
     }
     pub fn update(&mut self, mut snapshot: Snapshot, mutation: bool) {
         self.live_activity = snapshot.activity.clone();
+        self.live_resources = snapshot.resources.clone();
         self.live_paths = snapshot.permission_paths.clone();
         if self.paused {
             snapshot
                 .permission_paths
                 .preserve_activity(&self.snapshot.permission_paths);
             snapshot.activity = self.snapshot.activity.clone();
+            snapshot.resources = self.snapshot.resources.clone();
         } else {
             self.chart
                 .push_back(snapshot.activity.iter().fold((0u64, 0u64), |(a, b), p| {
@@ -182,6 +188,7 @@ impl App {
         self.updated_at = None;
         self.snapshot.notices = vec![clean(reason)];
         self.snapshot.firewall = None;
+        self.snapshot.control_age_ms = None;
         self.snapshot.applications_available = false;
         self.snapshot.applications.clear();
         self.snapshot.permission_paths = Default::default();
@@ -190,6 +197,8 @@ impl App {
             ..Default::default()
         };
         self.live_activity.clear();
+        self.live_resources = Default::default();
+        self.snapshot.resources = Default::default();
         self.live_paths = Default::default();
         for process in &mut self.snapshot.activity {
             process.rate_in = 0;
@@ -197,8 +206,8 @@ impl App {
             process.identities.clear();
         }
     }
-    pub fn incoming(&self, process: &ProcessActivity) -> crate::permissions::Resolution {
-        crate::permissions::Index::new(&self.snapshot).activity(process)
+    pub fn incoming(&self, process: &ProcessActivity) -> rooklet_core::permissions::Resolution {
+        rooklet_core::permissions::Index::new(&self.snapshot).activity(process)
     }
     pub fn filter(&self) -> &str {
         &self.filters[self.view.index()]

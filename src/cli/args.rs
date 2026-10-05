@@ -1,9 +1,10 @@
 //! Command-line syntax; execution lives in sibling modules.
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use rooklet::{
-    model::{Action, Direction, Protocol, Setting},
-    ui::Theme,
+use clap::{
+    Args, Parser, Subcommand, ValueEnum,
+    builder::{PossibleValuesParser, TypedValueParser},
 };
+use rooklet::ui::Theme;
+use rooklet_core::model::{Action, Direction, Protocol, Setting};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -66,7 +67,7 @@ pub(super) enum AppsCommand {
 pub(super) enum FirewallCommand {
     Status,
     Set {
-        #[arg(value_enum)]
+        #[arg(value_parser = PossibleValuesParser::new(Setting::ALL.iter().map(|value| value.as_str())).try_map(|value| value.parse::<Setting>()))]
         setting: Setting,
         #[arg(value_enum)]
         state: Switch,
@@ -156,14 +157,14 @@ pub(super) struct NetworkArgs {
     pub(super) id: Option<String>,
     #[arg(long, default_value = "Network rule")]
     pub(super) name: String,
-    #[arg(long, value_enum, default_value = "block")]
+    #[arg(long, value_parser = PossibleValuesParser::new(Action::ALL.iter().map(|value| value.as_str())).try_map(|value| value.parse::<Action>()), default_value = "block")]
     pub(super) action: Action,
     /// Destination port: remote for outgoing, local service port for incoming.
     #[arg(long,value_parser=clap::value_parser!(u16).range(1..))]
     pub(super) port: Option<u16>,
-    #[arg(long, value_enum, default_value = "any")]
+    #[arg(long, value_parser = PossibleValuesParser::new(Protocol::ALL.iter().map(|value| value.as_str())).try_map(|value| value.parse::<Protocol>()), default_value = "any")]
     pub(super) protocol: Protocol,
-    #[arg(long, value_enum, default_value = "out")]
+    #[arg(long, value_parser = PossibleValuesParser::new(Direction::ALL.iter().map(|value| value.as_str())).try_map(|value| value.parse::<Direction>()), default_value = "out")]
     pub(super) direction: Direction,
     #[arg(long)]
     pub(super) interface: Option<String>,
@@ -180,4 +181,60 @@ pub(super) enum ProfileCommand {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_choices_preserve_cli_spellings() {
+        for (value, expected) in [
+            ("firewall", Setting::Firewall),
+            ("stealth", Setting::Stealth),
+            ("block-all", Setting::BlockAll),
+            ("allow-signed", Setting::AllowSigned),
+            ("allow-signed-app", Setting::AllowSignedApp),
+        ] {
+            let cli = Cli::try_parse_from(["rooklet", "firewall", "set", value, "on"]).unwrap();
+            assert!(matches!(cli.command, Some(CliCommand::Firewall {
+                command: FirewallCommand::Set { setting, state: Switch::On }
+            }) if setting == expected));
+        }
+        let cli = Cli::try_parse_from([
+            "rooklet",
+            "network",
+            "add",
+            "any",
+            "--action",
+            "allow",
+            "--protocol",
+            "udp",
+            "--direction",
+            "in",
+        ])
+        .unwrap();
+        let Some(CliCommand::Network {
+            command: NetworkCommand::Add(args),
+        }) = cli.command
+        else {
+            panic!("expected network add");
+        };
+        assert_eq!(args.action, Action::Allow);
+        assert_eq!(args.protocol, Protocol::Udp);
+        assert_eq!(args.direction, Direction::Inbound);
+    }
+
+    #[test]
+    fn choices_reject_aliases_and_advertise_possible_values() {
+        for value in ["BLOCK", "deny"] {
+            let error =
+                Cli::try_parse_from(["rooklet", "network", "add", "any", "--action", value])
+                    .err()
+                    .unwrap();
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+            assert!(error.to_string().contains("possible values: allow, block"));
+        }
+        assert!(Cli::try_parse_from(["rooklet", "firewall", "set", "block_all", "on",]).is_err());
+    }
 }

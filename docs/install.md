@@ -46,6 +46,11 @@ administrator access use normal sudo authentication; the whole app does not need
 sudo. Use an 80 × 24 or larger terminal. Keyboard and mouse navigation are supported.
 Use `?` for TUI help and `rooklet --help` for CLI commands.
 
+Activity shows CPU, estimated memory, and captured process count at 120 columns
+or wider. Press `i` for process and disk I/O details, or `r` to hide resources.
+Resource counters are sampled every two seconds while displayed or used for
+sorting, without administrator access. Missing and partial readings stay explicit.
+
 Country labels are optional. Explicitly run `rooklet geoip update` to download the
 DB-IP Country Lite database; subsequent lookups stay offline. Incoming app
 permissions use macOS's application firewall. PF network rules are machine-wide.

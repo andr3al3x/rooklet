@@ -27,7 +27,7 @@ case "$release_target" in
 esac
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cargo build --manifest-path "$project_dir/Cargo.toml" --target-dir "$project_dir/target" \
-    --target "$release_target" --release --locked
+    --package rooklet --bin rooklet --target "$release_target" --release --locked
 binary_path="$project_dir/target/$release_target/release/rooklet"
 [ -f "$binary_path" ] && [ -x "$binary_path" ] || fail 'release executable is missing'
 actual_arch=$(/usr/bin/lipo -archs "$binary_path")

@@ -1,6 +1,6 @@
 //! Filtered rows and stable selection identities.
 use super::{ActivitySort, App, SETTINGS, View, activity_query::ActivityQuery};
-use crate::model::{Application, Connection, NetworkRule, ProcessActivity};
+use rooklet_core::model::{Application, Connection, NetworkRule, ProcessActivity};
 
 pub enum ActivityRow<'a> {
     Process(&'a ProcessActivity),
@@ -32,10 +32,10 @@ impl App {
         };
         let permissions = query
             .needs_incoming()
-            .then(|| crate::permissions::Index::new(&self.snapshot));
+            .then(|| rooklet_core::permissions::Index::new(&self.snapshot));
         let mut processes: Vec<_> = self.snapshot.activity.iter().collect();
         if self.activity_sort != ActivitySort::Snapshot {
-            processes.sort_by(|a, b| self.activity_sort.compare(a, b));
+            processes.sort_by(|a, b| self.activity_sort.compare(a, b, &self.snapshot.resources));
         }
         let needs_peer = query.needs_peer();
         let mut result = Vec::new();
@@ -43,7 +43,7 @@ impl App {
             let incoming = permissions
                 .as_ref()
                 .map(|index| index.activity(process).state)
-                .unwrap_or(crate::permissions::IncomingState::Unknown);
+                .unwrap_or(rooklet_core::permissions::IncomingState::Unknown);
             if !query.process_matches(process, incoming) {
                 continue;
             }

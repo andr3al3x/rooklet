@@ -2,8 +2,6 @@
 mod format;
 use super::{HitMap, theme::Palette};
 use crate::app::{ActivityRow, App, View, process_key};
-use crate::model::{Connection, ProcessActivity};
-use crate::presentation::clean;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Rect},
@@ -11,6 +9,8 @@ use ratatui::{
     text::Line,
     widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
 };
+use rooklet_core::model::{Connection, ProcessActivity};
+use rooklet_core::text::clean;
 
 #[derive(Clone, Copy)]
 enum Column {
@@ -23,6 +23,9 @@ enum Column {
     Sent,
     Incoming,
     Path,
+    Processes,
+    Cpu,
+    Memory,
 }
 impl Column {
     fn title(self) -> &'static str {
@@ -36,16 +39,26 @@ impl Column {
             Self::Sent => "↑ Total",
             Self::Incoming => "Incoming",
             Self::Path => "Path",
+            Self::Processes => "Procs",
+            Self::Cpu => "CPU %",
+            Self::Memory => "Mem est",
         }
     }
     fn numeric(self) -> bool {
         matches!(
             self,
-            Self::Peers | Self::Download | Self::Upload | Self::Received | Self::Sent
+            Self::Peers
+                | Self::Download
+                | Self::Upload
+                | Self::Received
+                | Self::Sent
+                | Self::Processes
+                | Self::Cpu
+                | Self::Memory
         )
     }
 }
-fn columns(width: u16) -> Vec<(Column, u16)> {
+fn columns(width: u16, resources: bool) -> Vec<(Column, u16)> {
     let mut columns = vec![(Column::Application, 0)];
     if width >= 76 {
         columns.push((Column::Peers, 5));
@@ -59,10 +72,16 @@ fn columns(width: u16) -> Vec<(Column, u16)> {
         columns.extend([(Column::Received, 7), (Column::Sent, 7)]);
     }
     if width >= 110 {
-        columns.extend([
-            (Column::Incoming, 8),
-            (Column::Path, if width >= 130 { 28 } else { 20 }),
-        ]);
+        columns.push((Column::Incoming, 8));
+        if resources && width >= 116 {
+            columns.extend([
+                (Column::Processes, 5),
+                (Column::Cpu, 7),
+                (Column::Memory, 9),
+            ]);
+        } else {
+            columns.push((Column::Path, if width >= 130 { 28 } else { 20 }));
+        }
     }
     // Borders and the selection marker each consume two cells; spacing consumes one per gap.
     let fixed = columns.iter().map(|(_, width)| *width).sum::<u16>() + columns.len() as u16 - 1 + 4;
@@ -89,7 +108,9 @@ pub(super) fn draw(
         ),
         crate::app::MouseAction::Key(crossterm::event::KeyCode::Char('s')),
     );
-    let legend = if area.width >= 110 {
+    let legend = if app.resources_visible && area.width >= 116 {
+        " CPU 100% = 1 core · Mem estimated · ~ partial/stale · — warming/unknown · i details "
+    } else if area.width >= 110 {
         " Totals since monitoring started · Peers / protocol · Incoming = registered app entries "
     } else if area.width >= 76 {
         " Totals since monitoring started · Peers / protocol "
@@ -124,11 +145,11 @@ pub(super) fn draw(
         );
         return;
     }
-    let columns = columns(area.width);
+    let columns = columns(area.width, app.resources_visible);
     let permissions = if area.width >= 110 {
-        crate::permissions::Index::new(&app.snapshot)
+        rooklet_core::permissions::Index::new(&app.snapshot)
     } else {
-        crate::permissions::Index::default()
+        rooklet_core::permissions::Index::default()
     };
     let data: Vec<_> = rows
         .iter()
@@ -146,9 +167,18 @@ pub(super) fn draw(
                     .iter()
                     .map(|&(column, width)| {
                         let (text, style) = match row {
-                            ActivityRow::Process(process) => {
-                                process_cell(expanded, &permissions, process, column, width, p)
-                            }
+                            ActivityRow::Process(process) => process_cell(
+                                expanded,
+                                &permissions,
+                                app.snapshot
+                                    .resources
+                                    .for_activity(process)
+                                    .filter(|_| app.snapshot.resources.enabled),
+                                process,
+                                column,
+                                width,
+                                p,
+                            ),
                             ActivityRow::Connection(_, flow) => {
                                 peer_cell(flow, column, width, area.width < 76, p)
                             }
@@ -187,7 +217,8 @@ pub(super) fn draw(
 }
 fn process_cell(
     expanded: bool,
-    permissions: &crate::permissions::Index,
+    permissions: &rooklet_core::permissions::Index,
+    usage: Option<&rooklet_core::resources::Usage>,
     process: &ProcessActivity,
     column: Column,
     width: u16,
@@ -206,6 +237,34 @@ fn process_cell(
         Column::Received => format::bytes(process.bytes_in),
         Column::Sent => format::bytes(process.bytes_out),
         Column::Incoming => permissions.activity(process).state.label().into(),
+        Column::Processes => usage
+            .map(|usage| {
+                if matches!(
+                    usage.state,
+                    rooklet_core::resources::ReadingState::Partial
+                        | rooklet_core::resources::ReadingState::Stale
+                ) {
+                    format!("~{}", usage.process_count)
+                } else {
+                    usage.process_count.to_string()
+                }
+            })
+            .unwrap_or_else(|| {
+                if process.identities.is_empty() {
+                    "—".into()
+                } else {
+                    process.identities.len().to_string()
+                }
+            }),
+        Column::Cpu => resource_value(usage, Column::Cpu, |usage| {
+            usage
+                .cpu_percent
+                .filter(|value| value.is_finite() && *value >= 0.0)
+                .map(|value| format!("{value:.1}%"))
+        }),
+        Column::Memory => resource_value(usage, Column::Memory, |usage| {
+            usage.memory_bytes.map(format::bytes)
+        }),
         Column::Path => process
             .path
             .as_deref()
@@ -215,7 +274,8 @@ fn process_cell(
     let style = match column {
         Column::Download => Style::default().fg(p.accent),
         Column::Upload => Style::default().fg(p.good),
-        Column::Country | Column::Peers | Column::Path => p.muted(),
+        Column::Country | Column::Peers | Column::Path | Column::Processes => p.muted(),
+        Column::Cpu | Column::Memory if text.starts_with('~') => Style::default().fg(p.warn),
         Column::Incoming => Style::default().fg(match text.as_str() {
             "Allow" => p.good,
             "Block" => p.bad,
@@ -279,5 +339,30 @@ pub(super) fn country(flow: &Connection) -> String {
             .as_ref()
             .map(|country| format!("{} · {}", clean(&country.code), clean(&country.name)))
             .unwrap_or_else(|| "Unknown".into())
+    }
+}
+
+fn resource_value(
+    usage: Option<&rooklet_core::resources::Usage>,
+    column: Column,
+    value: impl FnOnce(&rooklet_core::resources::Usage) -> Option<String>,
+) -> String {
+    let Some(usage) = usage else {
+        return "—".into();
+    };
+    let Some(value) = value(usage) else {
+        return "—".into();
+    };
+    match usage.state {
+        rooklet_core::resources::ReadingState::Fresh => value,
+        rooklet_core::resources::ReadingState::WarmingUp if matches!(column, Column::Memory) => {
+            value
+        }
+        rooklet_core::resources::ReadingState::Partial
+        | rooklet_core::resources::ReadingState::Stale => {
+            format!("~{value}")
+        }
+        rooklet_core::resources::ReadingState::WarmingUp
+        | rooklet_core::resources::ReadingState::Unavailable => "—".into(),
     }
 }

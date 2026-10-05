@@ -1,4 +1,4 @@
-use rooklet::{clean, clean_multiline};
+use rooklet_core::text::{clean, clean_multiline};
 use serde_json::{Value, json};
 use std::{fs, process::Command};
 use tempfile::tempdir;
