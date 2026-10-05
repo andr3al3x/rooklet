@@ -46,29 +46,13 @@ impl App {
                     );
                     return Effect::default();
                 }
-                KeyCode::Backspace => {
-                    path.pop();
-                }
-                KeyCode::Char(c) if !c.is_control() && path.len() < 4096 => path.push(c),
-                _ => {}
+                code => edit_text(Some(path), code, 4096),
             },
             Popup::Network { draft, field } => match key.code {
                 KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % 7,
                 KeyCode::BackTab | KeyCode::Up => *field = (*field + 6) % 7,
                 KeyCode::Left | KeyCode::Right => draft.cycle(*field),
                 KeyCode::Char(' ') if draft.text_mut(*field).is_none() => draft.cycle(*field),
-                KeyCode::Backspace => {
-                    if let Some(text) = draft.text_mut(*field) {
-                        text.pop();
-                    }
-                }
-                KeyCode::Char(c) if !c.is_control() => {
-                    if let Some(text) = draft.text_mut(*field)
-                        && text.len() < 256
-                    {
-                        text.push(c);
-                    }
-                }
                 KeyCode::Enter => match draft.rule() {
                     Ok(rule) => {
                         let mut rules = self.snapshot.network.rules.clone();
@@ -82,7 +66,7 @@ impl App {
                     }
                     Err(error) => self.notify(error.to_string(), true),
                 },
-                _ => {}
+                code => edit_text(draft.text_mut(*field), code, 256),
             },
             Popup::Explain { draft, field } => match key.code {
                 KeyCode::Enter => return Effect::default(),
@@ -90,23 +74,24 @@ impl App {
                 KeyCode::BackTab | KeyCode::Up => *field = (*field + 4) % 5,
                 KeyCode::Left | KeyCode::Right => draft.cycle(*field),
                 KeyCode::Char(' ') if draft.text_mut(*field).is_none() => draft.cycle(*field),
-                KeyCode::Backspace => {
-                    if let Some(text) = draft.text_mut(*field) {
-                        text.pop();
-                    }
-                }
-                KeyCode::Char(c) if !c.is_control() => {
-                    if let Some(text) = draft.text_mut(*field)
-                        && text.len() < 256
-                    {
-                        text.push(c);
-                    }
-                }
-                _ => {}
+                code => edit_text(draft.text_mut(*field), code, 256),
             },
             _ => {}
         }
         self.popup = Some(popup);
         Effect::default()
+    }
+}
+
+pub(super) fn edit_text(text: Option<&mut String>, code: KeyCode, max_bytes: usize) {
+    let Some(text) = text else { return };
+    match code {
+        KeyCode::Backspace => {
+            text.pop();
+        }
+        KeyCode::Char(c) if !c.is_control() && text.len() + c.len_utf8() <= max_bytes => {
+            text.push(c)
+        }
+        _ => {}
     }
 }

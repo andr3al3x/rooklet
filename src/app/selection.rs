@@ -1,5 +1,5 @@
 //! Filtered rows and stable selection identities.
-use super::{App, SETTINGS, View, activity_query::ActivityQuery};
+use super::{ActivitySort, App, SETTINGS, View, activity_query::ActivityQuery};
 use crate::model::{Application, Connection, NetworkRule, ProcessActivity};
 
 pub enum ActivityRow<'a> {
@@ -26,11 +26,6 @@ impl ActivityRow<'_> {
     }
 }
 impl App {
-    pub fn activity_expanded(&self, process: &ProcessActivity) -> bool {
-        self.expanded.contains(&process_key(process))
-            || ActivityQuery::parse(&self.filters[0])
-                .is_ok_and(|query| query.needs_peer() || !query.plain_process_matches(process))
-    }
     pub fn activity_rows(&self) -> Vec<ActivityRow<'_>> {
         let Ok(query) = ActivityQuery::parse(&self.filters[0]) else {
             return Vec::new();
@@ -39,7 +34,10 @@ impl App {
             .needs_incoming()
             .then(|| crate::permissions::Index::new(&self.snapshot));
         let mut processes: Vec<_> = self.snapshot.activity.iter().collect();
-        processes.sort_by(|a, b| self.activity_sort.compare(a, b));
+        if self.activity_sort != ActivitySort::Snapshot {
+            processes.sort_by(|a, b| self.activity_sort.compare(a, b));
+        }
+        let needs_peer = query.needs_peer();
         let mut result = Vec::new();
         for process in processes {
             let incoming = permissions
@@ -49,18 +47,15 @@ impl App {
             if !query.process_matches(process, incoming) {
                 continue;
             }
-            let matches_process = !query.needs_peer() && query.plain_process_matches(process);
-            let matching: Vec<_> = process
+            let matches_process = !needs_peer && query.plain_process_matches(process);
+            let mut matching = process
                 .connections
                 .iter()
                 .filter(|flow| query.flow_matches(process, flow))
-                .collect();
-            if matches_process || !matching.is_empty() {
+                .peekable();
+            if matches_process || matching.peek().is_some() {
                 result.push(ActivityRow::Process(process));
-                if self.expanded.contains(&process_key(process))
-                    || query.needs_peer()
-                    || !matches_process
-                {
+                if self.expanded.contains(&process_key(process)) || needs_peer || !matches_process {
                     for flow in matching {
                         result.push(ActivityRow::Connection(process, flow));
                     }
@@ -128,7 +123,8 @@ impl App {
             return;
         }
         let index = self
-            .selected_index()
+            .selected_key()
+            .and_then(|selected| keys.iter().position(|key| key == selected))
             .unwrap_or(0)
             .saturating_add_signed(delta)
             .min(keys.len() - 1);

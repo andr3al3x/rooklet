@@ -339,3 +339,52 @@ fn wide_path_cells_preserve_app_names_and_complete_directory_components() {
     }
     assert_eq!(app.snapshot.activity[0].path.as_deref(), Some(safari_path));
 }
+
+#[test]
+fn expansion_markers_follow_visible_peers_and_manual_expansion() {
+    let mut app = demo();
+    app.filters[0] = "app:Safari proto:tcp".into();
+    for (width, height) in [(80, 24), (120, 34)] {
+        let buffer = render(&app, width, height);
+        assert!(lines(&buffer)[usize::from(row(&buffer, "Safari"))].contains("▾"));
+        assert!(
+            lines(&buffer)
+                .iter()
+                .any(|line| line.contains("151.101.1.69"))
+        );
+    }
+    app.filters[0].clear();
+    let buffer = render(&app, 80, 24);
+    assert!(lines(&buffer)[usize::from(row(&buffer, "Safari"))].contains("▸"));
+    app.expanded.insert(process_key(&app.snapshot.activity[0]));
+    let buffer = render(&app, 80, 24);
+    assert!(lines(&buffer)[usize::from(row(&buffer, "Safari"))].contains("▾"));
+}
+
+#[test]
+fn an_open_inspector_tracks_the_sample_independently_of_filter_changes() {
+    let mut app = demo();
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Enter);
+    assert!(matches!(app.popup, Some(Popup::Inspect(_))));
+    app.filters[0] = "incoming:block".into();
+    assert!(
+        app.activity_rows()
+            .iter()
+            .all(|row| row.process().name != "Safari")
+    );
+    let buffer = render(&app, 80, 24);
+    assert!(
+        lines(&buffer)
+            .iter()
+            .any(|line| line.contains("151.101.1.69"))
+    );
+    app.snapshot.activity[0].connections.clear();
+    let buffer = render(&app, 80, 24);
+    assert!(
+        lines(&buffer)
+            .join("\n")
+            .contains("no longer in the current sample")
+    );
+}

@@ -1,7 +1,7 @@
 //! Bounded Activity queries and deterministic presentation ordering.
 use super::selection::process_key;
 use crate::{
-    model::{Connection, ProcessActivity},
+    model::{Connection, ProcessActivity, Protocol},
     permissions::IncomingState,
 };
 use ipnet::IpNet;
@@ -58,7 +58,7 @@ impl ActivitySort {
 enum Predicate {
     App(String),
     Country(String),
-    Protocol(String),
+    Protocol(Protocol),
     Incoming(IncomingState),
     Local(bool),
     Ip(IpNet),
@@ -111,9 +111,12 @@ impl ActivityQuery {
             let predicate = match key.to_lowercase().as_str() {
                 "app" => Predicate::App(value),
                 "country" => Predicate::Country(value),
-                "proto" if matches!(value.as_str(), "tcp" | "udp" | "any") => {
-                    Predicate::Protocol(value)
-                }
+                "proto" => Predicate::Protocol(match value.as_str() {
+                    "tcp" => Protocol::Tcp,
+                    "udp" => Protocol::Udp,
+                    "any" => Protocol::Any,
+                    _ => return Err(invalid()),
+                }),
                 "incoming" => Predicate::Incoming(match value.as_str() {
                     "allow" => IncomingState::Allow,
                     "block" => IncomingState::Block,
@@ -138,7 +141,7 @@ impl ActivityQuery {
                         .filter(|port| *port != 0)
                         .ok_or_else(invalid)?,
                 ),
-                "proto" | "scope" => return Err(invalid()),
+                "scope" => return Err(invalid()),
                 _ => return Err(format!("Unknown Activity filter field {key}:")),
             };
             query.predicates.push(predicate);
@@ -175,27 +178,30 @@ impl ActivityQuery {
         })
     }
     pub(super) fn plain_process_matches(&self, process: &ProcessActivity) -> bool {
-        process_text(process).contains(&self.plain)
+        self.plain.is_empty() || process_text(process).contains(&self.plain)
     }
     pub(super) fn flow_matches(&self, process: &ProcessActivity, flow: &Connection) -> bool {
-        let country = if flow.local {
-            "local network".into()
-        } else {
-            flow.country
-                .as_ref()
-                .map(|c| format!("{} {}", c.code, c.name))
-                .unwrap_or_else(|| "unknown".into())
+        let plain_matches = self.plain.is_empty() || {
+            let country = if flow.local {
+                "local network".into()
+            } else {
+                flow.country
+                    .as_ref()
+                    .map(|c| format!("{} {}", c.code, c.name))
+                    .unwrap_or_else(|| "unknown".into())
+            };
+            let text = format!(
+                "{} {} {} {} {}",
+                process_text(process),
+                flow.remote_ip,
+                flow.remote_port.map(|p| p.to_string()).unwrap_or_default(),
+                flow.protocol,
+                country
+            )
+            .to_lowercase();
+            text.contains(&self.plain)
         };
-        let text = format!(
-            "{} {} {} {} {}",
-            process_text(process),
-            flow.remote_ip,
-            flow.remote_port.map(|p| p.to_string()).unwrap_or_default(),
-            flow.protocol,
-            country
-        )
-        .to_lowercase();
-        text.contains(&self.plain)
+        plain_matches
             && self.predicates.iter().all(|predicate| match predicate {
                 Predicate::Country(value) => match value.as_str() {
                     "local" => flow.local,
@@ -208,9 +214,7 @@ impl ActivityQuery {
                             })
                     }
                 },
-                Predicate::Protocol(value) => {
-                    value == "any" || flow.protocol.to_string().eq_ignore_ascii_case(value)
-                }
+                Predicate::Protocol(value) => *value == Protocol::Any || flow.protocol == *value,
                 Predicate::Local(local) => flow.local == *local,
                 Predicate::Ip(network) => flow
                     .remote_ip

@@ -1,8 +1,9 @@
 //! Modal help, inspectors, editors, and mutation confirmations.
+mod information;
 mod rules;
-use super::{HitMap, activity::country, mouse::shortcuts, theme::Palette};
-use crate::app::{ActivityRow, App, ConfirmedAction, MouseAction, Popup};
-use crate::presentation::{bytes, clean};
+use super::{HitMap, mouse::shortcuts, theme::Palette};
+use crate::app::{App, ConfirmedAction, Popup};
+use crate::presentation::clean;
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
@@ -11,6 +12,7 @@ use ratatui::{
     text::Line,
     widgets::{Clear, Paragraph, Wrap},
 };
+use std::cell::Cell;
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width.saturating_sub(4));
@@ -96,163 +98,92 @@ pub(super) fn draw(
         Popup::Help | Popup::Inspect(_) | Popup::Explain { .. } => &[("[Esc Close]", KeyCode::Esc)],
     };
     let mut choices = choices.to_vec();
-    if let Popup::Explain { draft, field } = popup {
-        rules::explain(frame, app, draft, *field, content, p, hits);
-        shortcuts(frame, buttons, &choices, p, hits);
-        return;
-    }
-    if matches!(popup, Popup::Network { .. }) {
-        for index in 0..7.min(content.height as usize) {
-            hits.click(
-                Rect::new(content.x, content.y + index as u16, content.width, 1),
-                MouseAction::DialogField(index),
-            );
-        }
-    }
-    let lines = match popup {
-        Popup::Help => vec![
-            "Tab / 1–4     Activity, Applications, Network, Settings".into(),
-            "↑↓ / j k      Move selection".into(),
-            "Enter         Expand, inspect, edit, or toggle".into(),
-            "/             Search current view".into(),
-            "Activity /    app: country: proto: incoming: scope: ip: port:".into(),
-            "s / w         Sort Activity / explain Network rule matching".into(),
-            "a / b         Allow / block INCOMING app connections".into(),
-            "n             Add app path or machine-wide network rule".into(),
-            "d / t / + -   Delete / toggle / reorder network rule".into(),
-            "Space         Freeze activity display".into(),
-            "x / X         Terminate / force kill Activity app + helpers".into(),
-            "Esc           Cancel dialog or clear search".into(),
-            "u             Authenticate for PF status and changes".into(),
-            "g in Settings Update the offline country database".into(),
-            "q / Ctrl-C    Quit; applied firewall rules remain".into(),
-            "Click selects · double-click opens · wheel moves".into(),
-        ],
-        Popup::Confirm { body, .. } => body.lines().map(str::to_owned).collect::<Vec<_>>(),
-        Popup::Application { path } => vec![
-            "Absolute .app bundle or executable path:".into(),
-            "".into(),
-            format!("{}█", clean(path)),
-            "".into(),
-            "Review opens a confirmation before applying.".into(),
-        ],
+    let more = match popup {
         Popup::Network { draft, field } => {
-            let values = [
-                ("Remote IP/CIDR", draft.destination.clone()),
-                (
-                    "Destination port",
-                    if draft.port.is_empty() {
-                        "any".into()
+            rules::edit(frame, draft, *field, content, p, hits);
+            false
+        }
+        Popup::Explain { draft, field } => {
+            rules::explain(frame, app, draft, *field, content, p, hits);
+            false
+        }
+        Popup::Help => render_text(
+            frame,
+            content,
+            information::help().into_iter().map(Line::raw).collect(),
+            p,
+            None,
+        ),
+        Popup::Inspect(key) => render_text(
+            frame,
+            content,
+            information::inspect(app, key)
+                .into_iter()
+                .map(Line::raw)
+                .collect(),
+            p,
+            None,
+        ),
+        Popup::Application { path } => render_text(
+            frame,
+            content,
+            vec![
+                Line::raw("Absolute .app bundle or executable path:"),
+                Line::raw(""),
+                Line::raw(format!("{}█", clean(path))),
+                Line::raw(""),
+                Line::raw("Review opens a confirmation before applying."),
+            ],
+            p,
+            None,
+        ),
+        Popup::Confirm { body, scroll, .. } => {
+            hits.dialog_scroll(content);
+            let lines = body
+                .lines()
+                .map(|text| {
+                    if text.starts_with("Shadow warnings")
+                        || text.contains(" is fully shadowed by ")
+                    {
+                        Line::styled(text, Style::default().fg(p.warn))
                     } else {
-                        draft.port.clone()
-                    },
-                ),
-                ("Protocol", draft.protocol.to_string()),
-                ("Direction", draft.direction.to_string()),
-                ("Action", draft.action.to_string()),
-                (
-                    "Interface",
-                    if draft.interface.is_empty() {
-                        "any".into()
-                    } else {
-                        draft.interface.clone()
-                    },
-                ),
-                ("Name", draft.name.clone()),
-            ];
-            let mut lines = values
-                .iter()
-                .enumerate()
-                .map(|(index, (label, value))| {
-                    format!(
-                        "{} {:<19} {}",
-                        if index == *field { "›" } else { " " },
-                        label,
-                        clean(value)
-                    )
+                        Line::raw(text)
+                    }
                 })
-                .collect::<Vec<_>>();
-            lines.extend([
-                "".into(),
-                "Tab / ↑↓ field · ←→ / Space changes choice".into(),
-                "Type edits text · Enter reviews · Esc cancels".into(),
-                "Direction is proposed policy, not observed direction.".into(),
-                "Applies to every app. Port is local for inbound traffic.".into(),
-            ]);
-            lines
+                .collect();
+            render_text(frame, content, lines, p, Some(scroll))
         }
-        Popup::Inspect(key) => {
-            if let Some(ActivityRow::Connection(process, flow)) =
-                app.activity_rows().iter().find(|row| row.key() == *key)
-            {
-                vec![
-                    clean(&process.name),
-                    format!(
-                        "{} · port {} · {}",
-                        clean(&flow.remote_ip),
-                        flow.remote_port
-                            .map(|p| p.to_string())
-                            .unwrap_or_else(|| "unknown".into()),
-                        flow.protocol
-                    ),
-                    country(flow),
-                    "".into(),
-                    format!("↓ {} received", bytes(flow.bytes_in)),
-                    format!("↑ {} sent", bytes(flow.bytes_out)),
-                    "".into(),
-                    "Observed peer; firewall verdict is not available.".into(),
-                    "Country is an estimate for the observed IP.".into(),
-                    "".into(),
-                    "Click Close or press Esc to return.".into(),
-                ]
-            } else {
-                vec![
-                    "Connection is no longer in the current sample.".into(),
-                    "Click Close or press Esc to return.".into(),
-                ]
-            }
-        }
-        Popup::Explain { .. } => unreachable!("explanation is rendered above"),
     };
-    let text = lines
-        .into_iter()
-        .enumerate()
-        .map(|(index, text)| {
-            if let Popup::Network { field, .. } = popup
-                && index == *field
-            {
-                Line::styled(text, Style::default().fg(p.accent).bg(p.selection))
-            } else if matches!(popup, Popup::Confirm { .. })
-                && (text.starts_with("Shadow warnings") || text.contains(" is fully shadowed by "))
-            {
-                Line::styled(text, Style::default().fg(p.warn))
-            } else {
-                Line::raw(text)
-            }
-        })
-        .collect::<Vec<_>>();
-    let paragraph = Paragraph::new(text).style(Style::default().fg(p.text));
-    // Editor fields occupy one terminal row each; clipping keeps pointer focus
-    // aligned with their visible labels even for long values and narrow windows.
-    let paragraph = if matches!(popup, Popup::Network { .. }) {
+    if more {
+        choices.push(("[↓ More]", KeyCode::Down));
+    }
+    shortcuts(frame, buttons, &choices, p, hits);
+}
+
+fn render_text(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    p: Palette,
+    scroll: Option<&Cell<u16>>,
+) -> bool {
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(p.text))
+        .wrap(Wrap { trim: true });
+    let max = if scroll.is_some() {
         paragraph
+            .line_count(area.width)
+            .saturating_sub(area.height.into())
+            .min(u16::MAX as usize) as u16
     } else {
-        paragraph.wrap(Wrap { trim: true })
+        0
     };
-    let paragraph = if let Popup::Confirm { scroll, .. } = popup {
-        let max = paragraph
-            .line_count(content.width)
-            .saturating_sub(content.height.into())
-            .min(u16::MAX as usize) as u16;
+    let paragraph = if let Some(scroll) = scroll {
         scroll.set(scroll.get().min(max));
-        if max > 0 {
-            choices.push(("[↓ More]", KeyCode::Down));
-        }
-        hits.dialog_scroll(content);
         paragraph.scroll((scroll.get(), 0))
     } else {
         paragraph
     };
-    frame.render_widget(paragraph, content);
-    shortcuts(frame, buttons, &choices, p, hits);
+    frame.render_widget(paragraph, area);
+    max > 0
 }

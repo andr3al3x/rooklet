@@ -148,6 +148,31 @@ fn ordinary_multiword_search_remains_a_substring_and_autoexpands_peer_matches() 
 }
 
 #[test]
+fn plain_search_crosses_process_and_peer_fields_on_the_same_matching_flow() {
+    let mut app = app();
+    app.filters[0] = "proto:TCP /nonexistent/Web Browser 203.0.113.4".into();
+    assert_eq!(rows(&app).len(), 2);
+    app.filters[0] = "proto:UDP /nonexistent/Web Browser 203.0.113.4".into();
+    assert!(rows(&app).is_empty());
+}
+
+#[test]
+fn manual_expansion_keeps_all_peers_with_an_empty_search() {
+    let mut app = app();
+    app.expanded.insert(process_key(&app.snapshot.activity[0]));
+    let visible = app.activity_rows();
+    assert_eq!(visible.len(), 4);
+    assert!(matches!(visible[0], ActivityRow::Process(_)));
+    assert!(
+        matches!(visible[1], ActivityRow::Connection(_, flow) if flow.protocol == Protocol::Tcp)
+    );
+    assert!(
+        matches!(visible[2], ActivityRow::Connection(_, flow) if flow.protocol == Protocol::Udp)
+    );
+    assert!(matches!(visible[3], ActivityRow::Process(process) if process.name == "Idle"));
+}
+
+#[test]
 fn sorting_preserves_selection_across_snapshots_and_breaks_ties_by_identity() {
     let mut app = app();
     let selected = process_key(&app.snapshot.activity[0]);

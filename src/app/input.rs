@@ -26,15 +26,9 @@ impl App {
         if self.searching {
             match key.code {
                 KeyCode::Esc | KeyCode::Enter => self.searching = false,
-                KeyCode::Backspace => {
-                    self.filters[self.view.index()].pop();
+                code => {
+                    super::editor::edit_text(Some(&mut self.filters[self.view.index()]), code, 256)
                 }
-                KeyCode::Char(c)
-                    if !c.is_control() && self.filters[self.view.index()].len() < 256 =>
-                {
-                    self.filters[self.view.index()].push(c)
-                }
-                _ => {}
             }
             self.reconcile();
             return Effect::default();

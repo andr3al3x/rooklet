@@ -1,7 +1,7 @@
 //! Full-width observed app metrics with expandable peer details.
 mod format;
 use super::{HitMap, theme::Palette};
-use crate::app::{ActivityRow, App, View};
+use crate::app::{ActivityRow, App, View, process_key};
 use crate::model::{Connection, ProcessActivity};
 use crate::presentation::clean;
 use ratatui::{
@@ -132,14 +132,22 @@ pub(super) fn draw(
     };
     let data: Vec<_> = rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(index, row)| {
+            let expanded = match row {
+                ActivityRow::Process(process) => {
+                    app.expanded.contains(&process_key(process))
+                        || matches!(rows.get(index + 1), Some(ActivityRow::Connection(_, _)))
+                }
+                ActivityRow::Connection(_, _) => false,
+            };
             Row::new(
                 columns
                     .iter()
                     .map(|&(column, width)| {
                         let (text, style) = match row {
                             ActivityRow::Process(process) => {
-                                process_cell(app, &permissions, process, column, width, p)
+                                process_cell(expanded, &permissions, process, column, width, p)
                             }
                             ActivityRow::Connection(_, flow) => {
                                 peer_cell(flow, column, width, area.width < 76, p)
@@ -178,7 +186,7 @@ pub(super) fn draw(
     hits.table(area, 2, state.offset(), View::Activity, &keys);
 }
 fn process_cell(
-    app: &App,
+    expanded: bool,
     permissions: &crate::permissions::Index,
     process: &ProcessActivity,
     column: Column,
@@ -188,11 +196,7 @@ fn process_cell(
     let text = match column {
         Column::Application => format!(
             "{} {}",
-            if app.activity_expanded(process) {
-                "▾"
-            } else {
-                "▸"
-            },
+            if expanded { "▾" } else { "▸" },
             clean(&process.name)
         ),
         Column::Peers => process.connections.len().to_string(),
