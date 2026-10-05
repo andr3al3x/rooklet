@@ -11,11 +11,7 @@ use rooklet_core::{
     model::{NetworkRule, NetworkStatus},
     network::validate_rules,
 };
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const CONFIG: &str = "/etc/pf.conf";
 const ANCHOR_FILE: &str = "/etc/pf.anchors/rooklet";
@@ -29,21 +25,15 @@ pub enum Change<'a> {
     Remove,
 }
 
-fn executable() -> Result<PathBuf> {
-    std::env::current_exe()
-        .context("unable to locate rooklet executable")?
-        .canonicalize()
-        .context("unable to resolve rooklet executable")
-}
-
 /// Observe PF state without prompting for credentials.
+/// Once launched, wait for the helper's bounded root-owned tools and cleanup.
 pub fn request_status(cancel: &AtomicBool) -> Result<NetworkStatus> {
     ensure!(!cancel.load(Ordering::Relaxed), "network status cancelled");
     if command::is_root() {
         return Ok(lifecycle::status());
     }
-    let result = command::run(
-        &executable()?,
+    let result = command::run_transaction(
+        &command::self_executable()?,
         &["network".into(), "status".into()],
         None,
         true,
@@ -90,7 +80,13 @@ pub fn request_change(change: Change<'_>, cancel: &AtomicBool) -> Result<()> {
         if input.is_some() {
             args.push("--stdin".into());
         }
-        command::run_transaction(&executable()?, &args, input.as_deref(), true, cancel)?;
+        command::run_transaction(
+            &command::self_executable()?,
+            &args,
+            input.as_deref(),
+            true,
+            cancel,
+        )?;
         Ok(())
     })();
     match &result {
@@ -112,13 +108,12 @@ pub fn request_preflight(rules: &[NetworkRule], cancel: &AtomicBool) -> Result<(
     if command::is_root() {
         return preflight::preflight_apply(rules);
     }
-    command::run_with_timeout(
-        &executable()?,
+    command::run_transaction(
+        &command::self_executable()?,
         &["network".into(), "preflight".into(), "--stdin".into()],
         Some(&serde_json::to_vec(rules)?),
         true,
         cancel,
-        Duration::from_secs(90),
     )?;
     Ok(())
 }

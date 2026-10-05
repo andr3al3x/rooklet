@@ -10,6 +10,51 @@ use std::{
 };
 
 #[test]
+fn ordinary_runner_refuses_unprivileged_sudo_wrapping() {
+    if command::is_root() {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("must-not-launch");
+    let error = command::run(
+        Path::new("/usr/bin/touch"),
+        &[marker.to_str().unwrap().into()],
+        None,
+        true,
+        &AtomicBool::new(false),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("supervised root helper"));
+    assert!(!marker.exists());
+}
+
+#[test]
+fn tool_timeout_cleans_descendants_before_returning_to_helper() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("survived");
+    let ready = directory.path().join("ready");
+    let error = command::run_with_timeout(
+        Path::new("/bin/sh"),
+        &[
+            "-c".into(),
+            "printf ready > \"$2\"; (/bin/sleep .4; printf survived > \"$1\") & wait".into(),
+            "fixture".into(),
+            marker.to_str().unwrap().into(),
+            ready.to_str().unwrap().into(),
+        ],
+        None,
+        false,
+        &AtomicBool::new(false),
+        Duration::from_millis(150),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("timed out"));
+    assert!(ready.exists(), "fixture did not start before its deadline");
+    std::thread::sleep(Duration::from_millis(450));
+    assert!(!marker.exists(), "descendant outlived helper tool cleanup");
+}
+
+#[test]
 fn transaction_checks_cancellation_before_launch() {
     let directory = tempfile::tempdir().unwrap();
     let marker = directory.path().join("launched");

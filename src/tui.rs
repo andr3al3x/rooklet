@@ -12,7 +12,7 @@ use rooklet::{
 use rooklet_core::model::Snapshot;
 use std::time::Duration;
 use terminal::TerminalSession;
-use worker::{Update, UpdateKind, Worker};
+use worker::{Drained, Update, UpdateKind, Worker};
 
 pub(crate) fn run(theme: Theme) -> Result<()> {
     tracing::debug!("TUI starting");
@@ -28,10 +28,7 @@ pub(crate) fn run(theme: Theme) -> Result<()> {
         let mut hit_map = None;
         let mut ui_state = ui::State::default();
         loop {
-            for update in worker.drain() {
-                apply_update(&mut app, update, closing)?;
-                dirty = true;
-            }
+            dirty |= apply_worker_updates(&mut app, worker.drain(), closing)?;
             if closing && !app.busy {
                 break;
             }
@@ -122,6 +119,20 @@ fn authenticate_in_terminal(terminal: &mut TerminalSession) -> Result<Result<()>
     let result = authenticate();
     terminal.resume()?;
     Ok(result)
+}
+
+fn apply_worker_updates(app: &mut App, drained: Drained, closing: bool) -> Result<bool> {
+    let changed = !drained.updates.is_empty();
+    for update in drained.updates {
+        apply_update(app, update, closing)?;
+    }
+    if let Some(error) = drained.failure {
+        let message = error.to_string();
+        app.invalidate_observation(&message);
+        app.operation_failed(message);
+        return Err(error);
+    }
+    Ok(changed)
 }
 
 fn apply_update(app: &mut App, update: Update, closing: bool) -> Result<()> {

@@ -68,6 +68,11 @@ an authorized PF transaction or its restoration. Terminal restoration and backen
 shutdown both finish before the diagnostic writer is drained. See
 [ADR 0003](adr/0003-bounded-system-work.md).
 
+Response draining distinguishes an empty queue from a disconnected backend.
+Queued completions are processed first. A disconnected worker terminates the TUI
+through normal terminal restoration; an accepted operation with no completion
+has an unknown outcome, and further work is refused.
+
 Selection is keyed to stable app, peer, registration, or rule identities rather
 than row positions. Freezing Activity retains traffic, resources, and captured
 path evidence together while current firewall controls continue refreshing.
@@ -86,16 +91,22 @@ underneath them.
 
 The application runs as the normal user. Authentication uses `/usr/bin/sudo -v`
 outside raw mode. Backend privileged subprocesses use noninteractive sudo and
-never collect passwords. PF requests can invoke the canonical current executable
-as a privileged CLI helper with bounded input. There is no daemon, RPC layer,
-system extension, or app bundle.
+never collect passwords. Incoming changes and PF requests invoke the canonical
+current executable as supervised privileged helpers. The private incoming request
+contains only a typed ALF change and is limited to 1 MiB. Its hidden, root-only
+entry point runs before diagnostics or observation initialization and rejects
+logging options. There is no daemon, RPC layer, system extension, or app bundle.
 
 Commands use trusted executable paths and argument arrays. Output sizes,
 deadlines, cancellation, and child cleanup are supervised. Ordinary subprocesses
-have isolated groups cleaned before the leader is reaped; the accepted PF helper
-has separate supervision so cancellation or an I/O problem cannot abandon its
-transaction. Native wrappers document buffer, layout, ownership, and lifetime
-contracts at each unsafe boundary.
+have isolated groups cleaned before the leader is reaped. The bounded tool runner
+refuses unprivileged sudo wrapping: privileged tools are owned and cleaned by the
+root helper. Parent supervision waits for helper completion despite cancellation
+after launch or capture/input failures, including for read-only PF helpers.
+Incoming helpers finish their accepted operation and readback; PF helpers finish
+their transaction and restoration. See
+[ADR 0009](adr/0009-privilege-owned-tool-supervision.md). Native wrappers document
+buffer, layout, ownership, and lifetime contracts at each unsafe boundary.
 
 Configuration is validated before mutation and successful changes are read back.
 PF operations preserve unrelated anchors, states, and enable references, and
@@ -105,6 +116,15 @@ verifies all scopes, and attempts restoration on failure. These operations do
 not claim cross-backend atomicity. See
 [ADR 0004](adr/0004-explicit-verified-firewall-mutations.md) and the
 [PF guide](network.md).
+
+Apply checks the exact supported live parent layout under the mutation lock before
+acquiring an enable reference or changing anchor files/rules. Failed setup/removal
+parent reloads attempt safe file and runtime recovery independently and retain the
+original error alongside each restoration result. Runtime recovery uses captured,
+validated parent source and does not depend on successful managed-file restoration.
+Rooklet's lock serializes its own writers; external PF changes remain possible.
+Apple does not treat PF as a supported product API; the
+[PF compatibility contract](network.md#scope-and-compatibility) describes this limit.
 
 Termination captures the exact targets and requested signal for confirmation.
 The backend rechecks ownership, executable identity, start time, and kernel PID

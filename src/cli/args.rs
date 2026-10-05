@@ -22,6 +22,9 @@ pub(super) struct Cli {
 }
 #[derive(Subcommand)]
 pub(super) enum CliCommand {
+    /// Internal, root-only incoming firewall helper; bounded request on stdin.
+    #[command(name = "__incoming", hide = true)]
+    IncomingHelper,
     /// Read actual firewall state and observed traffic as JSON.
     Status,
     /// Check tools and report optional setup or monitoring limitations.
@@ -57,6 +60,7 @@ impl CliCommand {
     /// Static categories keep user-provided configuration out of diagnostics.
     pub(super) fn operation(&self) -> &'static str {
         match self {
+            Self::IncomingHelper => "incoming.helper",
             Self::Status => "status",
             Self::Doctor => "doctor",
             Self::Geoip { .. } => "geoip.update",

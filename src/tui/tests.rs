@@ -157,3 +157,60 @@ fn partial_mutation_and_failed_refresh_invalidate_all_cached_scopes() {
             .contains("partial failure; status refresh failed: refresh unavailable")
     );
 }
+
+#[test]
+fn backend_disconnection_exits_both_active_and_closing_sessions() {
+    for closing in [false, true] {
+        let mut app = App::new(Snapshot::default());
+        app.busy = true;
+        let error = apply_worker_updates(
+            &mut app,
+            Drained {
+                updates: Vec::new(),
+                failure: Some(anyhow::anyhow!(
+                    "backend worker stopped; the pending operation outcome is unknown"
+                )),
+            },
+            closing,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("outcome is unknown"));
+        assert!(!app.busy);
+        assert!(app.stale());
+        assert!(app.notice.unwrap().error);
+    }
+}
+
+#[test]
+fn backend_disconnection_preserves_queued_completion_before_exit() {
+    for closing in [false, true] {
+        let mut app = App::new(Snapshot::default());
+        let effect = app.handle(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('p'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(effect.profile.is_some());
+        let error = apply_worker_updates(
+            &mut app,
+            Drained {
+                updates: vec![Update {
+                    result: Ok(Snapshot::default()),
+                    operation_error: None,
+                    kind: UpdateKind::Profile,
+                    termination: None,
+                    profile: Some(rooklet::app::ProfileOutcome::Listed(vec!["Home".into()])),
+                }],
+                failure: Some(anyhow::anyhow!("backend worker stopped")),
+            },
+            closing,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "backend worker stopped");
+        assert!(!app.busy);
+        assert!(matches!(
+            app.popup,
+            Some(rooklet::app::Popup::Profiles { entries, loading: false, .. })
+                if entries == ["Home"]
+        ));
+    }
+}

@@ -18,6 +18,14 @@ use std::{
 const LIMIT: usize = 4 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Resolve the same binary for narrowly scoped, supervised privileged helpers.
+pub(crate) fn self_executable() -> Result<std::path::PathBuf> {
+    std::env::current_exe()
+        .context("unable to locate rooklet executable")?
+        .canonicalize()
+        .context("unable to resolve rooklet executable")
+}
+
 pub(crate) fn run(
     path: &Path,
     args: &[String],
@@ -25,7 +33,7 @@ pub(crate) fn run(
     privileged: bool,
     cancel: &AtomicBool,
 ) -> Result<String> {
-    execute(path, args, input, privileged, cancel, false, TIMEOUT)
+    run_with_timeout(path, args, input, privileged, cancel, TIMEOUT)
 }
 /// Includes successful stderr for tools whose result (such as a PF token) is written there.
 pub(crate) fn run_combined(
@@ -37,7 +45,7 @@ pub(crate) fn run_combined(
 ) -> Result<String> {
     execute(path, args, input, privileged, cancel, true, TIMEOUT)
 }
-/// A larger total budget for read-only helpers that perform several bounded tools.
+/// A bounded tool budget enforced by the process that owns the tool's privileges.
 pub(crate) fn run_with_timeout(
     path: &Path,
     args: &[String],
@@ -133,6 +141,10 @@ fn execute(
     let _span = tracing::debug_span!("subprocess", tool = tool_class(path), privileged).entered();
     let started = Instant::now();
     let result = (|| {
+        ensure!(
+            !privileged || is_root(),
+            "privileged tools must run inside a supervised root helper"
+        );
         let mut child = ManagedChild::spawn(&mut prepare(path, args, input, privileged, cancel)?)
             .with_context(|| format!("unable to start {}", path.display()))?;
         let result = (|| {

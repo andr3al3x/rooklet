@@ -28,6 +28,15 @@ pub(crate) fn run() -> Result<()> {
         }
         std::process::exit(error.exit_code());
     });
+    if matches!(cli.command, Some(CliCommand::IncomingHelper)) {
+        ensure!(
+            cli.logging.log_dir.is_none(),
+            "incoming helper does not accept logging options"
+        );
+        ensure!(rooklet_macos::is_root(), "incoming helper requires root");
+        let input = config::read_bounded(io::stdin().lock())?;
+        return rooklet_macos::backend::finish_incoming_change(&input);
+    }
     let logging = cli.logging.start()?;
     let mode = if cli.command.is_some() { "cli" } else { "tui" };
     let session = tracing::info_span!("session", mode, version = env!("CARGO_PKG_VERSION"));
@@ -81,6 +90,9 @@ fn dispatch(cli: Cli) -> Result<()> {
 }
 fn run_command(backend: &mut Backend, command: CliCommand) -> Result<()> {
     match command {
+        CliCommand::IncomingHelper => {
+            anyhow::bail!("incoming helper must use its dedicated entry point")
+        }
         CliCommand::Status => print_json(&backend.snapshot()?)?,
         CliCommand::Doctor => {
             let snapshot = backend.snapshot()?;

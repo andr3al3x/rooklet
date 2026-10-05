@@ -46,6 +46,7 @@ fn wait_for(worker: &mut Worker, kind: UpdateKind) -> Update {
     loop {
         if let Some(update) = worker
             .drain()
+            .updates
             .into_iter()
             .find(|update| update.kind == kind)
         {
@@ -275,4 +276,104 @@ fn action_error_and_failed_readback_are_both_retained() {
         "restoration failed"
     );
     assert_eq!(update.result.unwrap_err().to_string(), "observation failed");
+}
+
+fn join_panicked(worker: &mut Worker) {
+    assert!(worker.thread.take().unwrap().join().is_err());
+}
+
+fn assert_disconnected(worker: &mut Worker, unknown_outcome: bool) {
+    let drained = worker.drain();
+    let error = drained.failure.unwrap().to_string();
+    assert!(error.contains("backend worker stopped"));
+    assert_eq!(error.contains("outcome is unknown"), unknown_outcome);
+    assert!(!worker.in_flight);
+    assert!(worker.update_geoip().is_err());
+    assert!(worker.drain().failure.is_none());
+}
+
+#[test]
+fn observation_panic_disconnects_idle_worker() {
+    let mut worker = worker_with(|_| panic!("fake observation panic"));
+    join_panicked(&mut worker);
+    assert_disconnected(&mut worker, false);
+}
+
+#[test]
+fn stopped_worker_rejects_submission_before_disconnection_is_drained() {
+    let mut worker = worker_with(|_| update(Ok(snapshot(false))));
+    worker.cancel.store(true, Ordering::Relaxed);
+    worker.thread.take().unwrap().join().unwrap();
+    assert!(worker.update_geoip().is_err());
+    assert!(!worker.in_flight);
+    assert_disconnected(&mut worker, false);
+}
+
+#[test]
+fn operation_panic_reports_unknown_accepted_outcome() {
+    let mut worker = worker_with(|work| {
+        assert!(work.is_none(), "fake accepted operation panic");
+        update(Ok(snapshot(false)))
+    });
+    worker.update_geoip().unwrap();
+    join_panicked(&mut worker);
+    assert_disconnected(&mut worker, true);
+}
+
+#[test]
+fn observation_panic_reports_unknown_queued_operation_outcome() {
+    let (started, observing) = mpsc::channel();
+    let (release, paused) = mpsc::channel();
+    let mut worker = worker_with(move |work| {
+        assert!(work.is_none());
+        started.send(()).unwrap();
+        paused.recv_timeout(Duration::from_secs(3)).unwrap();
+        panic!("fake observation panic before queued work");
+    });
+    observing.recv_timeout(Duration::from_secs(3)).unwrap();
+    worker.update_geoip().unwrap();
+    release.send(()).unwrap();
+    join_panicked(&mut worker);
+    assert_disconnected(&mut worker, true);
+}
+
+#[test]
+fn queued_completion_is_drained_before_disconnection() {
+    let mut worker = worker_with(|_| update(Ok(snapshot(false))));
+    // Replace the fake observation worker with a producer that completes an
+    // accepted operation and then panics before the UI drains that completion.
+    worker.cancel.store(true, Ordering::Relaxed);
+    worker.updates.take();
+    worker.thread.take().unwrap().join().unwrap();
+    let (responses, updates) = mpsc::sync_channel(1);
+    worker.updates = Some(updates);
+    worker.in_flight = true;
+    worker.thread = Some(thread::spawn(move || {
+        responses
+            .send(Update {
+                kind: UpdateKind::Firewall,
+                ..update(Ok(snapshot(true)))
+            })
+            .unwrap();
+        panic!("fake panic after completion");
+    }));
+    join_panicked(&mut worker);
+    let drained = worker.drain();
+    assert_eq!(drained.updates.len(), 1);
+    assert!(
+        drained.updates[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .firewall
+            .as_ref()
+            .unwrap()
+            .stealth
+    );
+    assert_eq!(
+        drained.failure.unwrap().to_string(),
+        "backend worker stopped"
+    );
+    assert!(!worker.in_flight);
+    assert!(worker.update_geoip().is_err());
 }

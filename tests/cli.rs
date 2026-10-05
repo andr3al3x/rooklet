@@ -8,6 +8,53 @@ use tempfile::tempdir;
 fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_rooklet"))
 }
+
+#[test]
+fn incoming_helper_is_hidden_and_cannot_start_diagnostics() {
+    let help = cli().arg("--help").output().unwrap();
+    assert!(help.status.success());
+    assert!(!String::from_utf8_lossy(&help.stdout).contains("__incoming"));
+    let directory = tempdir().unwrap();
+    let log_dir = directory.path().join("logs");
+    let output = cli()
+        .args(["__incoming", "--log-dir"])
+        .arg(&log_dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("does not accept logging options"));
+    assert!(!log_dir.exists());
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn incoming_helper_rejects_unprivileged_invocation_before_reading_stdin() {
+    if rooklet_macos::is_root() {
+        return;
+    }
+    // Keep stdin open and send no bytes. Root enforcement must precede input.
+    let mut child = cli()
+        .arg("__incoming")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("unprivileged helper waited for input");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires root"));
+    assert!(output.stdout.is_empty());
+}
 #[test]
 fn unsupported_commands_and_flags_are_rejected() {
     for args in [

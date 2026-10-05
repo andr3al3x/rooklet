@@ -27,6 +27,10 @@ same behavior requirements when updating those tests.
   state on errors and shutdown; never collect passwords or let workers prompt.
 - Keep queues bounded and coalesce observation interest/refresh requests. Accepted
   operations take precedence over sampling; quitting waits for authorized PF transactions.
+- Handle backend disconnection after queued completions, report unfinished work as
+  an unknown outcome, refuse further work, and restore the terminal before exit.
+- Dispatch the hidden root-only incoming helper before logging or observations;
+  reject logging flags and pass bounded input to the macOS facade.
 - Keep diagnostics separate from terminal output. Use explicit static categories,
   counts, durations, and outcomes; never log paths, endpoints, configuration, raw
   arguments/output, process metadata, or error display. Follow [ADR 0007's event map](../docs/adr/0007-private-bounded-diagnostics.md#event-map).

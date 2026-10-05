@@ -35,6 +35,9 @@ explicit CLI. This document describes supported behavior, not a roadmap. See the
 Quit waits for accepted operations to finish. An action failure and a failed
 status refresh are reported separately; partial state or failed restoration is
 not presented as success.
+If the backend worker disconnects, queued completions are handled before Rooklet
+restores the terminal and exits with an error. Pending work without a completion
+has an unknown outcome; it is not automatically retried.
 
 ## Traffic, countries, and resources
 
@@ -86,11 +89,15 @@ complete coverage by one earlier rule; hypothetical explanations retain unknown
 fields rather than claiming a live verdict.
 
 PF setup is explicit and supports only validated parent layouts. Apply changes
-Rooklet's anchor. Disable clears that anchor and releases only Rooklet's enable
-reference, retaining metadata for reapplication; remove additionally removes the
+Rooklet's anchor after checking the exact supported live parent order. Disable
+clears that anchor and releases only Rooklet's enable reference, retaining metadata
+for reapplication; remove additionally removes the
 managed setup/state. Unrelated anchors, rules, states, and references are
 preserved. Unsupported layouts, drift, and unsafe managed files cause refusal or
 explicit diagnostics. See the [PF guide](network.md).
+
+Setup/removal reload failures attempt safe file and runtime recovery independently
+and report each restoration outcome alongside the original failure.
 
 Profiles contain incoming settings, registered applications, and ordered network
 rules. Export requires complete control state and refuses overwrite. Check is
@@ -131,6 +138,10 @@ CLI configuration output preserves exact JSON values. Human errors/notices
 sanitize terminal controls and bidi overrides. Validation failures occur before
 mutation; privileged backend subprocesses never prompt for credentials.
 
+Accepted incoming changes run with readback inside a root helper that owns bounded
+tool deadlines and cleanup. Parent supervision waits for helper completion before
+returning I/O failures; cancellation before launch prevents execution.
+
 ## Distribution and current limits
 
 The application ships as one architecture-specific binary with checksum,
@@ -150,3 +161,6 @@ The project is an early release. Privileged mutation, connectivity enforcement,
 VPN coexistence, and reboot behavior need isolated integration testing. Intel
 and older macOS runtime behavior remain unverified. Diagnostic logs and observed
 traffic cannot replace those checks.
+
+PF is not a supported Apple product API, so macOS and other networking components
+can change its compatibility. See [PF scope and compatibility](network.md#scope-and-compatibility).

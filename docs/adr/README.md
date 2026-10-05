@@ -16,8 +16,9 @@ current design; [functionality](../functional.md) describes supported behavior.
 | [0006](0006-offline-country-data.md) | Resolve countries offline with explicit database updates | Accepted |
 | [0007](0007-private-bounded-diagnostics.md) | Use optional private, bounded file diagnostics | Accepted |
 | [0008](0008-identity-bound-process-signaling.md) | Bind confirmed process signals to captured kernel identity | Accepted |
+| [0009](0009-privilege-owned-tool-supervision.md) | Supervise privileged tools inside their owning root helper | Accepted |
 
-These initial records are retrospective descriptions of implemented decisions at
+Records 0001–0008 are retrospective descriptions of implemented decisions at
 the time of recording. Their recorded date is not an asserted historical decision
 date. Alternatives explain the trade-offs of the current design; they do not
 claim to reconstruct a past debate or approval by named people.

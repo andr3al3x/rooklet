@@ -23,8 +23,11 @@ Module paths below are relative to this crate's `src/` directory.
 - Never prompt for credentials or collect passwords. The application authenticates
   through normal sudo outside raw mode before calling privileged operations.
 - Check cancellation before launch, bound tool output/deadlines, and reap children.
-  Once an authorized PF transaction starts, finish it and any restoration even
-  if the user quits; report supervision failures after the helper completes.
+  Privileged tools must be owned and supervised inside a root helper, never killed
+  through unprivileged sudo group cleanup. Once an authorized incoming helper or
+  PF transaction starts, finish readback/restoration even if the user quits; report
+  supervision failures after the helper completes. Read-only PF helpers also own
+  their tool deadlines and cleanup.
 - Validate the entire proposed configuration before mutation and verify readback.
   ALF operations are sequential; report partial failures without claiming atomicity.
 - Cached controls are for routine observation only. Mutations, profile preparation,

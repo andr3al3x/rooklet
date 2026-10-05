@@ -6,6 +6,20 @@ Application firewall settings are independent and remain managed by macOS.
 Rooklet manages only its own anchor and files. Other PF anchors, states, and
 enable references are preserved.
 
+## Scope and compatibility
+
+Apple treats PF as an advanced mechanism for users and administrators, rather than
+a supported API for widely distributed products. Apple recommends Network Extension
+for product filtering; that deployment requires extension packaging outside
+Rooklet's standalone-binary scope. See
+[TN3165: Packet Filter is not API](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)
+and [TN3134: Network Extension provider deployment](https://developer.apple.com/documentation/technotes/tn3134-network-extension-provider-deployment).
+
+Rooklet checks supported layouts and reports drift, but cannot guarantee
+coexistence with future macOS rules, VPNs, sharing, or other networking products.
+Connectivity and coexistence need isolated integration validation. Observed rule
+consistency remains distinct from proof of packet enforcement.
+
 ## Explicit setup
 
 `rooklet network setup` authenticates through sudo and installs an empty initial
@@ -21,7 +35,17 @@ supported parent configuration. Failures attempt restoration and report the
 remaining state explicitly.
 
 Normal apply updates only Rooklet's anchor. It does not reload the parent ruleset.
+Apply checks the same exact live parent layout as preflight while holding Rooklet's
+mutation lock. Missing/reordered anchors and extra parent rules cause refusal
+before acquiring an enable reference or changing anchor files/rules. External
+PF writers do not share this lock and can still change state.
 No global PF rules/state flush or `pfctl -d` is used.
+
+After a failed setup/removal parent reload, file and safe runtime restoration are
+attempted independently. Runtime recovery uses captured, validated parent source
+and the prior empty managed runtime anchor, without reading a managed file whose
+restoration failed. The error reports the original failure and each restoration
+outcome; a failed file restore may require manual recovery before reboot/reload.
 
 ## Rule files and previews
 

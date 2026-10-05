@@ -1,6 +1,7 @@
 //! macOS firewall operations and local activity observations.
 mod alf;
 mod cache;
+mod incoming;
 mod live;
 mod parser;
 
@@ -11,6 +12,13 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+
+/// Finish a bounded incoming-firewall helper request as root, without starting
+/// observations or authentication. Only ALF changes are accepted; the private
+/// request decoder cannot specify executables or arbitrary command arguments.
+pub fn finish_incoming_change(input: &[u8]) -> Result<()> {
+    incoming::finish(input)
+}
 
 pub struct Backend {
     live: Live,
@@ -90,14 +98,7 @@ impl Backend {
                         &self.cancel,
                     )?;
                 }
-                Mutation::Setting(setting, value) => {
-                    alf::set_setting(setting, value, &self.cancel)?
-                }
-                Mutation::Applications { paths, action } => {
-                    alf::set_applications(&paths, action, &self.cancel)?
-                }
-                Mutation::AddApplication(path) => alf::add_application(&path, &self.cancel)?,
-                Mutation::RemoveApplication(path) => alf::remove_application(&path, &self.cancel)?,
+                mutation => incoming::request(mutation, &self.cancel)?,
             }
             Ok(())
         })();

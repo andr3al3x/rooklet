@@ -68,6 +68,15 @@ pub(super) fn patch_config(source: &str, install: bool) -> Result<String> {
 pub(super) fn configured(source: &str) -> bool {
     patch_config(source, true).is_ok() && source.contains(BLOCK)
 }
+/// Runtime parent recovery must not read a managed anchor whose file restoration
+/// may have failed. Its live rules are restored independently by the lifecycle.
+pub(super) fn recovery_config(source: &str) -> Result<String> {
+    patch_config(source, false)?;
+    Ok(source
+        .split_inclusive('\n')
+        .filter(|line| line.trim() != "load anchor \"rooklet\" from \"/etc/pf.anchors/rooklet\"")
+        .collect())
+}
 pub(super) fn has_parent_anchor(output: &str) -> bool {
     output
         .lines()
@@ -140,6 +149,17 @@ mod tests {
         assert!(installed.starts_with(APPLE));
         assert_eq!(patch_config(&installed, true).unwrap(), installed);
         assert_eq!(patch_config(&installed, false).unwrap(), APPLE);
+    }
+    #[test]
+    fn recovery_preserves_parent_without_reading_managed_anchor_file() {
+        assert_eq!(recovery_config(APPLE).unwrap(), APPLE);
+        let installed = patch_config(APPLE, true).unwrap();
+        let recovery = recovery_config(&installed).unwrap();
+        assert!(recovery.starts_with(APPLE));
+        assert!(recovery.contains("anchor \"rooklet\"\n"));
+        assert!(!recovery.contains("/etc/pf.anchors/rooklet"));
+        assert!(recovery_config(&format!("{APPLE}pass all\n")).is_err());
+        assert!(recovery_config(&installed.replace("/etc/pf.anchors/rooklet", "/unsafe")).is_err());
     }
     #[test]
     fn changed_block_and_custom_root_rules_are_rejected() {

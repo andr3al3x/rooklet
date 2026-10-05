@@ -148,8 +148,10 @@ cached firewall controls become unavailable until a successful refresh.
 Authentication happens outside terminal raw mode. Rooklet never collects or stores
 passwords, and worker commands use noninteractive `sudo`. Quitting waits for an
 authorized mutation to finish. Applied settings remain after Rooklet exits.
-PF helpers retain individual tool deadlines and finish any restoration before
-the supervising process reports output or input errors.
+Privileged helpers own individual tool deadlines and cleanup. They finish accepted
+incoming changes/readback or PF transactions/restoration before the supervising
+process reports output or input errors. If the backend worker stops unexpectedly,
+Rooklet restores the terminal and exits; unfinished operation outcomes are unknown.
 
 ## Optional network rules
 
@@ -165,6 +167,11 @@ rooklet network status
 
 These commands change network policy and may affect connectivity. Setup accepts
 Apple's stock parent PF layout and refuses unsupported custom parent rules.
+Apply also rejects changes to the supported live parent layout. PF is an advanced
+administration mechanism that Apple does not consider a supported product API;
+macOS updates and other networking software can affect compatibility. See
+[PF scope and compatibility](docs/network.md#scope-and-compatibility).
+
 Rules match a remote peer: source IP for incoming traffic, destination IP for
 outgoing traffic. The port is the destination service port: local for incoming,
 remote for outgoing. The first matching enabled rule inside Rooklet's anchor wins.

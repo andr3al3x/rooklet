@@ -58,8 +58,8 @@ other tools have the category `other`.
 Only the `rooklet` and `rooklet_macos` target namespaces are enabled. `RUST_LOG`
 does not change this policy or enable dependency logs. Privileged helpers are
 invoked without logging flags and do not inherit a sink through environment
-configuration. For delegated PF work, the parent records supervision and the
-returned outcome; internal helper phases are absent from that log. Human
+configuration. For delegated privileged helper work, the parent records supervision
+and the returned outcome; internal helper phases are absent from that log. Human
 diagnostics still report application and restoration failures.
 
 No logging path writes to stdout/stderr, including sink overflow or failure.
@@ -104,7 +104,7 @@ payload diagnostics. The custom sink is extra maintained code, constrained to
 diagnostic storage rather than a general logging framework. Overflow, crashes,
 failed/stalled filesystems, and shutdown timeout can lose records or the final
 summary. These logs are best effort, not a durable audit trail. Inner phases of
-privileged PF helpers are absent from the parent's log.
+privileged helpers are absent from the parent's log.
 
 ## Verification and references
 

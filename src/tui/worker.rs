@@ -25,6 +25,11 @@ pub(super) struct Update {
     pub profile: Option<ProfileOutcome>,
 }
 
+pub(super) struct Drained {
+    pub updates: Vec<Update>,
+    pub failure: Option<anyhow::Error>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum UpdateKind {
     Observation,
@@ -257,15 +262,42 @@ impl Worker {
         Ok(())
     }
 
-    pub fn drain(&mut self) -> Vec<Update> {
-        let updates: Vec<_> = self.updates.iter().flat_map(Receiver::try_iter).collect();
-        if updates
-            .iter()
-            .any(|update| update.kind != UpdateKind::Observation)
-        {
-            self.in_flight = false;
+    pub fn drain(&mut self) -> Drained {
+        let mut drained = Drained {
+            updates: Vec::new(),
+            failure: None,
+        };
+        let Some(receiver) = &self.updates else {
+            return drained;
+        };
+        loop {
+            match receiver.try_recv() {
+                Ok(update) => {
+                    if update.kind != UpdateKind::Observation {
+                        self.in_flight = false;
+                    }
+                    drained.updates.push(update);
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Consume accepted completions before deciding whether the outcome
+                    // of an operation is unknown. A dead backend cannot accept more work.
+                    self.commands.take();
+                    self.updates.take();
+                    drained.failure = Some(if self.in_flight {
+                        anyhow::anyhow!(
+                            "backend worker stopped; the pending operation outcome is unknown"
+                        )
+                    } else {
+                        anyhow::anyhow!("backend worker stopped")
+                    });
+                    self.in_flight = false;
+                    tracing::error!("backend worker disconnected");
+                    break;
+                }
+            }
         }
-        updates
+        drained
     }
 }
 
